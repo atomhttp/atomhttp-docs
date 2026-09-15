@@ -19,16 +19,15 @@ export const viewport: Viewport = {
 export const metadata: Metadata = {
   metadataBase: new URL("https://inject3r.github.io/atomhttp"),
   title: {
-    default: "AtomHTTP - Professional HTTP Client for Python",
+    default: "AtomHTTP - Sync-First HTTP Client for Python",
     template: "%s | AtomHTTP",
   },
   description:
-    "AtomHTTP is a professional asynchronous HTTP client for Python with interceptors, progress tracking, FormData, Blob/ArrayBuffer support, concurrent requests, and full type hints. Built for modern Python applications.",
+    "AtomHTTP is a synchronous-first HTTP client for Python with fully optional async support, built entirely on urllib3. Features cancellation, multithreading, streaming uploads/downloads, caching, interceptors, and full type hints.",
   keywords: [
     "python http client",
     "async http client",
     "python requests alternative",
-    "aiohttp alternative",
     "http client library",
     "python rest api client",
     "async await http",
@@ -58,9 +57,9 @@ export const metadata: Metadata = {
     },
   },
   openGraph: {
-    title: "AtomHTTP - Professional HTTP Client for Python",
+    title: "AtomHTTP - Sync-First HTTP Client for Python",
     description:
-      "Feature-rich asynchronous HTTP client for Python with interceptors, progress tracking, FormData, and full type hints.",
+      "Sync by default, async optional. Built on urllib3, with cancellation, multithreading, streaming, and caching built in.",
     url: "https://inject3r.github.io/atomhttp",
     siteName: "AtomHTTP",
     locale: "en_US",
@@ -68,9 +67,9 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "AtomHTTP - Professional HTTP Client for Python",
+    title: "AtomHTTP - Sync-First HTTP Client for Python",
     description:
-      "Feature-rich asynchronous HTTP client for Python with interceptors, progress tracking, FormData, and full type hints.",
+      "Sync by default, async optional. Built on urllib3, with cancellation, multithreading, streaming, and caching built in.",
     creator: "@inject3r",
   },
   icons: {
