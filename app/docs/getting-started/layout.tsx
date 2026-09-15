@@ -3,9 +3,9 @@ import type { Metadata } from "next";
 export const metadata: Metadata = {
   title: "Getting Started",
   description:
-    "Install and start using AtomHTTP - professional asynchronous HTTP client for Python. Quick setup guide with examples for making GET and POST requests.",
+    "Install and start using AtomHTTP - a synchronous-first HTTP client for Python with fully optional async support. Quick setup guide with examples for making GET and POST requests.",
   keywords:
-    "install atomhttp, python http client setup, pip install atomhttp, python async http client, atomhttp tutorial, python http requests",
+    "install atomhttp, python http client setup, pip install atomhttp, python sync http client, python async http client, atomhttp tutorial, python http requests",
   openGraph: {
     title: "Getting Started - AtomHTTP",
     description:

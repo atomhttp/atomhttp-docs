@@ -5,224 +5,260 @@ import Section from "@/components/shared/Section";
 import CodeBlock from "@/components/ui/CodeBlock";
 
 const interceptorsData = {
-  title: "Interceptors",
+  title: "Interceptors & Hooks",
   description:
     "Interceptors are functions that can modify requests before they are sent or modify responses before they are returned to the caller. This is useful for adding authentication headers, logging, retry logic, error handling, or transforming data globally.",
   details:
-    "Request interceptors run in the order they are added. Response interceptors run in the order they are added. You can remove interceptors using the index returned by the use() method.",
+    "Request interceptors run in registration order; so do response interceptors. Remove one with the index returned by use(). Interceptors can be regular functions or async def -- the async client awaits async interceptors, and the sync client can run them too via a small internal event loop. For lighter-weight instrumentation, pass onRequestStart/onRetry/onRedirect directly on a request instead of registering a full interceptor.",
   parameters: [
     [
-      "interceptor",
+      "fn",
       "Callable",
       "Required",
-      "Async or sync function that receives config/response and returns modified config/response",
-    ],
-    [
-      "is_response",
-      "bool",
-      "False",
-      "If True, adds to response interceptors; if False, adds to request interceptors",
+      "Function receiving config (request) or response (response), returning the (possibly modified) value",
     ],
   ],
-  returns: ["int", "Index of the added interceptor (can be used with eject())"],
-  code: `# Request interceptor - adds auth token to every request
-async def auth_interceptor(config):
+  returns: ["int", "Index of the added interceptor (usable with eject())"],
+  code: `# Request interceptor -- adds auth token to every request
+def auth_interceptor(config):
     config.headers['Authorization'] = 'Bearer my-secret-token'
     return config
 
-# Request interceptor - logs each request
-async def log_interceptor(config):
-    print(f"Request: {config.method} {config.url}")
-    return config
-
-# Response interceptor - handles errors globally
-async def error_interceptor(response):
-    if response.status >= 400:
-        print(f"Error {response.status}: {response.status_text}")
+# Response interceptor -- logs status of every response
+def log_interceptor(response):
+    print(f"{response.config.method} {response.config.url} -> {response.status}")
     return response
 
-# Register interceptors
-client.interceptors.use(auth_interceptor)
-client.interceptors.use(log_interceptor)
-client.interceptors.use(error_interceptor, is_response=True)
+client.interceptors.request.use(auth_interceptor)
+index = client.interceptors.response.use(log_interceptor)
 
 # Remove an interceptor by index
-index = client.interceptors.use(some_interceptor)
-client.interceptors.eject(index)`,
+client.interceptors.response.eject(index)
+
+# Lightweight observability hooks, no interceptor needed:
+client.get(
+    '/report',
+    onRequestStart=lambda config: print(f"starting {config.url}"),
+    onRetry=lambda config, attempt, error: print(f"retry #{attempt}: {error}"),
+    onRedirect=lambda config, response: print(f"redirected: {response.status}"),
+)`,
 };
 
-const progressData = {
-  title: "Progress Tracking",
+const cancellationData = {
+  title: "Cancellation",
   description:
-    "Monitor upload and download progress with real-time callbacks. This is essential for large file transfers, providing user feedback and enabling features like progress bars.",
+    "Axios/fetch-style request cancellation via AbortController. Create a controller, pass its .signal into a request, and call controller.abort() from anywhere -- another thread, a UI \"Cancel\" button, a signal handler -- to stop it. Works for any request in the library: sync or async, uploads or downloads, with or without retries.",
   details:
-    "The callback receives two parameters: loaded (bytes transferred so far) and total (total bytes expected, may be 0 if unknown). Progress tracking works with both request bodies (upload) and response bodies (download).",
+    "Interrupting a request that's genuinely blocked on a socket read requires force-closing the underlying connection from another thread -- there's no way to \"just return early\" from a blocked system call. AtomHTTP registers the live urllib3 connection with the signal for the duration of the request; calling abort() force-closes that socket, making the blocked read raise immediately. Between chunks (uploading or downloading), the adapter also proactively checks whether the signal has been aborted. One honest limitation: there's a brief window during initial DNS resolution/TCP connect (before a socket exists to close) where abort() takes effect at the next check point rather than instantaneously -- in practice this window is small.",
   parameters: [
-    [
-      "on_upload_progress",
-      "Callable",
-      "None",
-      "Callback function receiving (loaded, total) for uploads",
-    ],
-    [
-      "on_download_progress",
-      "Callable",
-      "None",
-      "Callback function receiving (loaded, total) for downloads",
-    ],
-    [
-      "response_type",
-      "str",
-      '"json"',
-      'Use "blob" or "stream" for large downloads',
-    ],
+    ["signal", "AbortSignal", "None", "Pass to any request via the signal= kwarg to make it cancellable"],
   ],
-  returns: [
-    "Response",
-    "Response object with data (bytes for blob, async iterator for stream)",
+  returns: ["None", "raises AtomHTTPCancelError (code ERR_CANCELED) when aborted"],
+  code: `from atomhttp import AtomHTTP, AbortController
+from atomhttp.errors import AtomHTTPCancelError
+
+client = AtomHTTP(base_url="https://api.example.com", timeout=30)
+controller = AbortController()
+
+# From another thread, UI callback, etc:
+# controller.abort("user clicked cancel")
+
+try:
+    response = client.get("/slow-report", signal=controller.signal)
+except AtomHTTPCancelError as e:
+    print("request was cancelled:", e.message)
+
+# One controller can cancel multiple in-flight requests at once.
+# Works identically with AsyncAtomHTTP:
+async def run():
+    try:
+        await async_client.get("/slow", signal=controller.signal)
+    except AtomHTTPCancelError:
+        print("cancelled")`,
+};
+
+const concurrencyData = {
+  title: "Multithreading & Concurrency",
+  description:
+    "Every AtomHTTP client owns a persistent thread pool (max_workers=10 by default, configurable). Because urllib3's connection pools are thread-safe, this gives you real concurrency for I/O-bound batches of requests without needing async/await anywhere.",
+  details:
+    ".all() reuses the client's persistent pool instead of spinning up a new ThreadPoolExecutor per call, avoiding thread-creation overhead. submit() gives you a plain concurrent.futures.Future for fire-and-forget workflows. map() runs the same request against many URLs and returns results in input order regardless of completion order. The async client uses asyncio.gather() for the equivalent behaviour.",
+  methods: [
+    ["client.all(calls, max_workers=None)", "Run request thunks concurrently, returns List[Response] in order"],
+    ["client.submit(method, url, **kwargs)", "Fire off one request on the thread pool, returns a Future[Response]"],
+    ["client.map(method, urls, **kwargs)", "Run the same request against many URLs concurrently, returns List[Response] in order"],
+    ["async_client.all(coros)", "asyncio.gather shortcut for the async client"],
   ],
-  code: `def on_upload(loaded, total):
-    percent = (loaded / total) * 100 if total > 0 else 0
-    print(f"Uploading: {percent:.1f}% ({loaded}/{total} bytes)")
+  returns: ["List[Response] (all/map)", "concurrent.futures.Future[Response] (submit)"],
+  code: `client = AtomHTTP(base_url="https://api.example.com", max_workers=20)
 
-def on_download(loaded, total):
-    percent = (loaded / total) * 100 if total > 0 else 0
-    print(f"Downloading: {percent:.1f}%")
+# Run a batch concurrently:
+responses = client.all([
+    lambda: client.get("/a"),
+    lambda: client.get("/b"),
+    lambda: client.get("/c"),
+])
 
-# Large file upload with progress
-with open('large_file.bin', 'rb') as f:
-    response = await client.post(
-        'https://httpbin.org/post',
-        data=f,
-        on_upload_progress=on_upload
-    )
+# Fire-and-forget:
+future = client.submit("GET", "/report")
+# ... do other work ...
+response = future.result()
 
-# Download with progress
-response = await client.get(
-    'https://httpbin.org/bytes/50000',
-    on_download_progress=on_download,
-    response_type='blob'
-)`,
+# Same request, many URLs, results in input order:
+responses = client.map("GET", ["/users/1", "/users/2", "/users/3"])
+
+# Async equivalent:
+responses = await async_client.all([
+    async_client.get("/a"),
+    async_client.get("/b"),
+])`,
+};
+
+const streamingData = {
+  title: "Streaming, Download & Pagination",
+  description:
+    "client.stream() returns a response whose body hasn't been read yet, for processing large downloads incrementally instead of loading them fully into memory. client.download() streams straight to a file on disk. client.paginate() walks a paginated REST endpoint as a generator.",
+  details:
+    "Always use stream() as a context manager (sync with / async async with) so the connection is released even if you stop reading partway through. download()'s async version runs the file I/O in the thread pool so disk writes don't block the event loop. paginate() defaults to a ?page=N query parameter and stops as soon as a page comes back with no items; pass extract_items/has_next for custom pagination schemes (cursor-based APIs, etc).",
+  methods: [
+    ["client.stream(method, url, **kwargs)", "Returns a StreamResponse with .iter_bytes()/.iter_lines()"],
+    ["client.download(url, path, onDownloadProgress=None, **kwargs)", "Streams response body straight to disk"],
+    ["client.paginate(url, page_param='page', extract_items=None, has_next=None, **kwargs)", "Generator yielding one page's items at a time"],
+  ],
+  code: `# Streaming a large response body
+with client.stream("GET", "/export.csv") as response:
+    for line in response.iter_lines():
+        process(line)
+
+# Downloading straight to disk, with progress
+client.download(
+    "/video.mp4", "video.mp4",
+    onDownloadProgress=lambda loaded, total: print(f"{loaded}/{total}"),
+)
+
+# Pagination -- default ?page=N scheme
+for items in client.paginate("/users"):
+    for user in items:
+        process(user)
+
+# Pagination -- custom cursor-style API
+for items in client.paginate(
+    "/items",
+    extract_items=lambda r: r.data["results"],
+    has_next=lambda r: r.data.get("next") is not None,
+):
+    ...
+
+# Async versions are identical, with async with / async for:
+async with await async_client.stream("GET", "/export.csv") as response:
+    async for line in response.iter_lines():
+        process(line)
+
+async for items in async_client.paginate("/users"):
+    ...`,
 };
 
 const formDataData = {
   title: "FormData & File Uploads",
   description:
-    "Send multipart/form-data requests including both text fields and file uploads. This follows the browser FormData API, making it easy to construct complex form submissions.",
+    "Send multipart/form-data requests including both text fields and file uploads. This follows the browser FormData API, making it easy to construct complex form submissions. Large files stream automatically -- a multi-gigabyte upload never needs to fit in memory.",
   details:
-    "Files can be provided as bytes, file objects, or Path objects. The content-type is automatically detected from file extensions. Multiple values can be appended to the same field name.",
+    "Files can be provided as bytes, file objects, or pathlib.Path objects. The content-type is automatically detected from file extensions via the standard mimetypes module. Multiple values can be appended to the same field name. When any field is a file, AtomHTTP switches to a generator-based streaming multipart encoder automatically -- verified with tracemalloc to use a small, fixed amount of memory regardless of file size.",
   methods: [
     [
       "append(name, value, filename, content_type)",
       "Adds a new value to the form data",
     ],
+    ["set(name, value, filename, content_type)", "Replaces all existing values for a field"],
     ["delete(name)", "Removes all values for a field"],
     ["get(name)", "Returns the first value for a field"],
     ["get_all(name)", "Returns all values for a field as a list"],
     ["has(name)", "Checks if a field exists"],
     ["keys()", "Returns all field names"],
     ["items()", "Returns all (name, value) pairs"],
+    ["to_multipart()", "Builds the full body in memory -- fine for small forms"],
+    ["to_multipart_stream(chunk_size=65536)", "Returns (generator, boundary, total_size) for streaming uploads"],
   ],
-  code: `from atomhttp import AtomHTTP
+  code: `from atomhttp import FormData
+from pathlib import Path
 
-form = AtomHTTP.FormData()
+form = FormData()
 form.append('username', 'johndoe')
 form.append('email', 'john@example.com')
 form.append('avatar', open('profile.jpg', 'rb'), filename='profile.jpg')
-form.append('document', open('resume.pdf', 'rb'), filename='resume.pdf')
+form.append('document', Path('resume.pdf'), filename='resume.pdf')
 
 # Supports multiple values for the same field
 form.append('tags', 'python')
 form.append('tags', 'http')
 form.append('tags', 'async')
 
-response = await client.post('https://api.example.com/upload', data=form)`,
+response = client.post('https://api.example.com/upload', data=form)
+
+# Large file, with real upload progress (streams automatically):
+form2 = FormData()
+form2.append('video', Path('large-video.mp4'), filename='large-video.mp4')
+client.post(
+    '/upload', data=form2,
+    onUploadProgress=lambda loaded, total: print(f"{loaded}/{total} bytes"),
+)`,
 };
 
-const concurrentData = {
-  title: "Concurrent Requests",
+const cachingData = {
+  title: "Caching",
   description:
-    "Execute multiple requests in parallel to significantly improve performance when you need to fetch multiple resources. AtomHTTP provides helper utilities similar to Promise.all() from JavaScript.",
+    "atomhttp.cache.CacheInterceptor implements conditional GET requests using ETag/If-None-Match and Last-Modified/If-Modified-Since -- the same mechanism browsers use.",
   details:
-    "The all() method runs all requests concurrently and waits for all to complete. The spread() method allows you to destructure the response array into individual arguments for cleaner callback code.",
+    "After a 200 response with an ETag or Last-Modified header comes back, its body is cached in memory (or in a store you provide). The next matching request sends back the cached validator; if the server replies 304 Not Modified, the cached body is served back instead of re-parsing a full response. This still makes a network round trip on every call -- it saves bandwidth and re-parsing cost, not the round trip itself. True zero-network-call caching within a max-age window isn't supported by the interceptor pipeline by design; wrap the client call yourself with your own TTL check if you need that.",
+  classes: [
+    ["CacheInterceptor(store=None)", "Holds cached entries and the interceptor functions", "on_request(config), on_response(response), clear()"],
+  ],
+  code: `from atomhttp import AtomHTTP
+from atomhttp.cache import CacheInterceptor
+
+client = AtomHTTP(base_url="https://api.example.com")
+cache = CacheInterceptor()
+client.interceptors.request.use(cache.on_request)
+client.interceptors.response.use(cache.on_response)
+
+client.get("/users/1")   # normal request, response cached (has ETag)
+client.get("/users/1")   # sends If-None-Match; 304 -> served from cache
+
+cache.clear()             # drop everything`,
+};
+
+const cookiesData = {
+  title: "Cookies & XSRF",
+  description:
+    "Every client keeps a persistent cookie jar (backed by the standard library's http.cookiejar) unless you opt out with cookies=False. Cookies are isolated per client instance -- two separate AtomHTTP() clients never share a jar.",
+  details:
+    "If a cookie named xsrfCookieName (default 'XSRF-TOKEN') is present in the jar for the request's host, its value is copied automatically into the xsrfHeaderName header (default 'X-XSRF-TOKEN') -- the standard double-submit CSRF pattern.",
   methods: [
-    [
-      "AtomHTTP.all(tasks)",
-      "Execute multiple requests concurrently, returns list of responses",
-    ],
-    [
-      "AtomHTTP.spread(callback, *responses)",
-      "Spread responses array to individual callback arguments",
-    ],
+    ["client.cookies.get(name, domain=None)", "Look up a single cookie's value"],
+    ["client.cookies.set(name, value, domain='', path='/')", "Manually inject a cookie into the jar"],
+    ["client.cookies.clear()", "Empty the jar"],
   ],
-  returns: ["List[Response] (all)", "Any (spread - result of callback)"],
-  code: `# Using AtomHTTP.all() for concurrent execution
-tasks = [
-    client.get('/posts/1'),
-    client.get('/posts/2'),
-    client.get('/posts/3')
-]
-responses = await AtomHTTP.all(tasks)
+  code: `client = AtomHTTP(base_url="https://api.example.com")   # cookies=True by default
+client.get("/login")     # any Set-Cookie response headers are stored
+client.get("/profile")   # matching cookies are sent automatically
 
-for resp in responses:
-    print(f"Post {resp.data['id']}: {resp.status}")
+no_cookies_client = AtomHTTP(base_url="...", cookies=False)
 
-# Using spread() to distribute responses to individual arguments
-def process_results(res1, res2, res3):
-    return {
-        'first': res1.data['title'],
-        'second': res2.data['title'],
-        'third': res3.data['title']
-    }
+# Manual access
+client.cookies.get("session")
+client.cookies.set("session", "abc123", domain="api.example.com")
+client.cookies.clear()
 
-result = await AtomHTTP.spread(process_results, *responses)`,
-};
-
-const transformersData = {
-  title: "Data Transformers",
-  description:
-    "Transform request data before sending or response data after receiving. This is useful for normalization, validation, serialization, or adding metadata to all requests/responses.",
-  details:
-    "transformRequest is called with the request data before it is sent. transformResponse is called with the response data before it is returned to your code. Both can be synchronous or asynchronous functions.",
-  parameters: [
-    [
-      "transformRequest",
-      "Callable",
-      "None",
-      "Function that transforms request data before sending",
-    ],
-    [
-      "transformResponse",
-      "Callable",
-      "None",
-      "Function that transforms response data after receiving",
-    ],
-  ],
-  code: `# Transform request data - convert strings to uppercase
-client.defaults.transformRequest = lambda data: data.upper() if isinstance(data, str) else data
-
-# Transform response data - add timestamp and metadata
-client.defaults.transformResponse = lambda data: {
-    'timestamp': time.time(),
-    'content': data,
-    'version': 'v2'
-} if isinstance(data, dict) else data
-
-response = await client.post('/api/message', data='hello world')
-print(response.data)
-# {
-#     'timestamp': 1700000000,
-#     'content': 'hello world',
-#     'version': 'v2'
-# }`,
+# XSRF -- automatic once the cookie is present in the jar
+client.get("/state-changing-endpoint")  # X-XSRF-TOKEN header added automatically`,
 };
 
 const authData = {
   title: "Authentication",
   description:
-    "Built-in support for standard authentication mechanisms including Basic Authentication and Bearer Token authentication. These handlers automatically format the Authorization header correctly.",
+    "Built-in support for standard authentication mechanisms including HTTP Basic Auth (applied automatically via auth=) and Bearer Token authentication. Helper classes are also available for building headers by hand.",
   details:
-    "Basic Auth encodes credentials as base64. Bearer Token adds the token directly. Both return a dictionary ready to be merged into request headers. For more complex authentication, you can use request interceptors to add custom headers.",
+    "Prefer RequestConfig(auth={...}) for plain HTTP Basic Auth -- the client applies it automatically. BasicAuth/BearerAuth are small convenience helpers for building Authorization headers for custom interceptors or non-standard auth flows.",
   classes: [
     [
       "BasicAuth(username, password)",
@@ -235,137 +271,84 @@ const authData = {
       'get_header() returns {"Authorization": "Bearer token"}',
     ],
   ],
-  code: `from atomhttp.auth import BasicAuth, BearerAuth
+  code: `# Preferred: built-in Basic Auth, applied automatically
+response = client.get(
+    'https://httpbin.org/basic-auth/username/password',
+    auth={'username': 'username', 'password': 'password'},
+)
 
-# Basic Authentication - encodes credentials as base64
+# Helper classes for custom flows / interceptors
+from atomhttp.auth import BasicAuth, BearerAuth
+
 basic = BasicAuth('username', 'password')
-response = await client.get('https://httpbin.org/basic-auth/username/password',
-                           headers=basic.get_header())
+response = client.get('https://httpbin.org/basic-auth/username/password',
+                       headers=basic.get_header())
 
-# Bearer Token Authentication - adds token directly
 bearer = BearerAuth('your-jwt-token-here')
-response = await client.get('https://api.example.com/protected',
-                           headers=bearer.get_header())
+response = client.get('https://api.example.com/protected',
+                       headers=bearer.get_header())
 
-# Using interceptors for complex auth flows
-async def oauth_interceptor(config):
-    token = await get_oauth_token()
-    config.headers['Authorization'] = f'Bearer {token}'
+# Complex auth flows via interceptors
+def oauth_interceptor(config):
+    config.headers['Authorization'] = f'Bearer {get_fresh_token()}'
     return config
 
-client.interceptors.use(oauth_interceptor)`,
+client.interceptors.request.use(oauth_interceptor)`,
 };
 
-const blobData = {
-  title: "Blob & ArrayBuffer",
+const networkingData = {
+  title: "Proxies, TLS & Unix Sockets",
   description:
-    "Handle binary data with different response types. This is essential for working with images, PDFs, audio files, or any other binary data format.",
+    "Configure proxies (including SOCKS), TLS verification and mTLS client certificates, and Unix domain socket connections. Brotli response decoding is available as an optional extra.",
   details:
-    "blob and arraybuffer both return binary data as bytes (arraybuffer is an alias for compatibility). stream returns an async iterator for processing large files without loading entire content into memory.",
-  responseTypes: [
-    [
-      "blob",
-      "Returns binary data as bytes",
-      "Best for small to medium files (images, PDFs, etc.)",
-    ],
-    [
-      "arraybuffer",
-      "Returns binary data as bytes",
-      "Alias for blob, for compatibility",
-    ],
-    [
-      "stream",
-      "Returns async iterator",
-      "Best for very large files (videos, archives, etc.)",
-    ],
-  ],
-  code: `# Download as Blob (bytes) - best for small to medium files
-response = await client.get('https://httpbin.org/image/png', response_type='blob')
-image_data = response.data  # bytes
-
-# Save to file
-with open('image.png', 'wb') as f:
-    f.write(image_data)
-
-# Download as ArrayBuffer (alias for blob)
-response = await client.get('https://httpbin.org/bytes/10000', response_type='arraybuffer')
-binary_data = response.data  # bytes
-
-# Download as Stream - best for very large files
-response = await client.get('https://example.com/large-file.zip', response_type='stream')
-async for chunk in response.data:
-    process_chunk(chunk)`,
-};
-
-const limitsData = {
-  title: "Limits & Timeouts",
-  description:
-    "Configure maximum sizes for requests and responses to protect your application from overly large payloads. Set timeouts to prevent hanging requests from blocking your application indefinitely.",
-  details:
-    "maxBodyLength limits the request body size. maxContentLength limits the response body size. timeout can be set globally and overridden per request. keepAlive reuses connections for better performance. socketPath allows connection via Unix domain sockets instead of TCP/IP.",
+    "If proxy= isn't given, HTTP_PROXY/HTTPS_PROXY/NO_PROXY environment variables are honored automatically. verify accepts True/False or a path to a custom CA bundle. cert accepts a single file path or a (cert, key) tuple for mTLS. socketPath connects over AF_UNIX instead of TCP -- useful for talking to services like the Docker daemon.",
   options: [
-    [
-      "timeout",
-      "int/float",
-      "30",
-      "Request timeout in seconds (total duration)",
-    ],
-    ["maxRedirects", "int", "5", "Maximum number of redirects to follow"],
-    [
-      "maxBodyLength",
-      "int",
-      "-1",
-      "Maximum request body size in bytes (-1 = unlimited)",
-    ],
-    [
-      "maxContentLength",
-      "int",
-      "-1",
-      "Maximum response body size in bytes (-1 = unlimited)",
-    ],
-    [
-      "keepAlive",
-      "bool",
-      "True",
-      "Enable HTTP keep-alive connections for connection reuse",
-    ],
-    [
-      "verify",
-      "bool",
-      "True",
-      "Enable SSL certificate verification for HTTPS requests",
-    ],
-    [
-      "retryConfig",
-      "dict",
-      "None",
-      "Retry settings for transient errors and server retries",
-    ],
-    [
-      "socketPath",
-      "str",
-      "None",
-      "Unix domain socket path (alternative to TCP/IP)",
-    ],
-    [
-      "decompress",
-      "bool",
-      "True",
-      "Automatically decompress gzip/deflate responses",
-    ],
+    ["proxy", "dict", "None", '{"host": "http://proxy:8080"} or socks5://... (needs atomhttp[socks])'],
+    ["verify", "bool | str", "True", "TLS verification on/off, or a custom CA bundle path"],
+    ["cert", "str | tuple", "None", "mTLS client certificate: path, or (cert_path, key_path)"],
+    ["socketPath", "str", "None", "Unix domain socket path (alternative to TCP/IP)"],
+    ["decompress", "bool", "True", "Auto-decode gzip/deflate/brotli (brotli needs atomhttp[brotli])"],
   ],
-  code: `client = AtomHTTP({
-    'timeout': 30,
-    'maxRedirects': 5,
-    'maxBodyLength': 10 * 1024 * 1024,   # 10MB
-    'maxContentLength': 50 * 1024 * 1024, # 50MB
-    'keepAlive': True,
-    'socketPath': '/var/run/docker.sock',
-    'decompress': True
-})
+  code: `# Proxy (explicit, or read from HTTP_PROXY/HTTPS_PROXY automatically)
+client.get("/data", proxy={"host": "http://proxy.example.com:8080"})
+client.get("/data", proxy={"host": "http://proxy:8080", "auth": {"username": "u", "password": "p"}})
 
-# Override timeout for a specific request
-response = await client.get('https://slow-api.com', timeout=5)`,
+# SOCKS proxy (pip install atomhttp[socks])
+client.get("/data", proxy={"host": "socks5://127.0.0.1:1080"})
+
+# TLS / mTLS
+client.get("/secure", verify="/path/to/custom-ca.pem")
+client.get("/secure", cert=("/path/to/cert.pem", "/path/to/key.pem"))
+
+# Unix domain socket -- e.g. the Docker daemon
+client.get("http://localhost/containers/json", socketPath="/var/run/docker.sock")
+
+# Brotli (pip install atomhttp[brotli]) -- decoded transparently, no code changes`,
+};
+
+const retriesData = {
+  title: "Retries & Backoff",
+  description:
+    "Configure automatic retries for transient network/server failures. Retry-After response headers are honored automatically. Redirects are always followed independently of retryConfig, up to maxRedirects.",
+  details:
+    "If retryConfig isn't set, no error-based retries happen (only redirects, up to maxRedirects). Retries apply exponential backoff (backoff_factor * 2^attempt) and only retry on the configured status_forcelist codes plus connection/read errors. Use onRetry to observe each attempt.",
+  options: [
+    ["retryConfig.max_retries", "int", "3", "Maximum retry attempts for connect/read/status failures"],
+    ["retryConfig.backoff_factor", "float", "0.3", "Exponential backoff multiplier between attempts"],
+    ["retryConfig.status_forcelist", "list[int]", "[408,429,500,502,503,504]", "Status codes that trigger a retry"],
+    ["maxRedirects", "int", "5", "Independent of retryConfig -- always applies"],
+  ],
+  code: `response = client.get(
+    "/flaky-endpoint",
+    retryConfig={
+        "max_retries": 5,
+        "backoff_factor": 0.3,
+        "status_forcelist": [408, 429, 500, 502, 503, 504],
+    },
+    onRetry=lambda config, attempt, error: print(f"retry #{attempt}: {error}"),
+)
+# A server-sent "Retry-After" header is respected automatically,
+# taking priority over the exponential backoff calculation.`,
 };
 
 const Table = ({
@@ -404,11 +387,8 @@ const Table = ({
   </div>
 );
 
-const FeatureSection = ({ data }: { data: any }) => (
-  <Section
-    id={data.title.toLowerCase().replace(/ & /g, "-").replace(/ /g, "-")}
-    className="scroll-mt-24"
-  >
+const FeatureSection = ({ data, id }: { data: any; id: string }) => (
+  <Section id={id} className="scroll-mt-24">
     <div className="mb-4">
       <h2 className="text-xl sm:text-2xl font-semibold text-white mb-2">
         {data.title}
@@ -458,18 +438,6 @@ const FeatureSection = ({ data }: { data: any }) => (
       </>
     )}
 
-    {data.responseTypes && (
-      <>
-        <h4 className="text-sm font-medium text-white mb-2 mt-4">
-          Response Types
-        </h4>
-        <Table
-          headers={["Type", "Description", "Use Case"]}
-          rows={data.responseTypes}
-        />
-      </>
-    )}
-
     {data.returns && (
       <div className="mb-4">
         <h4 className="text-sm font-medium text-white mb-2">Returns</h4>
@@ -485,6 +453,19 @@ const FeatureSection = ({ data }: { data: any }) => (
   </Section>
 );
 
+const features: { data: any; id: string }[] = [
+  { data: interceptorsData, id: "interceptors" },
+  { data: cancellationData, id: "cancellation" },
+  { data: concurrencyData, id: "concurrency" },
+  { data: streamingData, id: "streaming" },
+  { data: formDataData, id: "formdata" },
+  { data: cachingData, id: "caching" },
+  { data: cookiesData, id: "cookies" },
+  { data: authData, id: "auth" },
+  { data: networkingData, id: "networking" },
+  { data: retriesData, id: "retries" },
+];
+
 export default function AdvancedPage() {
   useEffect(() => {
     if (window.location.hash) {
@@ -496,17 +477,6 @@ export default function AdvancedPage() {
     }
   }, []);
 
-  const features = [
-    interceptorsData,
-    progressData,
-    formDataData,
-    concurrentData,
-    transformersData,
-    authData,
-    blobData,
-    limitsData,
-  ];
-
   return (
     <>
       <div className="mb-8">
@@ -515,15 +485,17 @@ export default function AdvancedPage() {
         </h1>
         <p className="text-sm sm:text-base text-gray-400">
           Take full control of your HTTP requests with powerful advanced
-          features
+          features — cancellation, real concurrency without async, true
+          streaming, caching, and more
         </p>
       </div>
 
       <div className="space-y-10 sm:space-y-12">
-        {features.map((feature) => (
-          <FeatureSection key={feature.title} data={feature} />
+        {features.map(({ data, id }) => (
+          <FeatureSection key={id} data={data} id={id} />
         ))}
       </div>
     </>
   );
 }
+

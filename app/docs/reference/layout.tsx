@@ -3,9 +3,9 @@ import type { Metadata } from "next";
 export const metadata: Metadata = {
   title: "Reference",
   description:
-    "Complete AtomHTTP API reference including method documentation, comparison with other HTTP clients (requests, aiohttp, httpx), error codes, response types, and practical examples.",
+    "Complete AtomHTTP API reference including method documentation, comparison with other HTTP clients (requests, httpx), error codes, response types, and practical examples.",
   keywords:
-    "atomhttp api reference, python http client comparison, requests vs aiohttp vs httpx, http error codes python, response types python, atomhttp examples",
+    "atomhttp api reference, python http client comparison, requests vs httpx, http error codes python, response types python, atomhttp examples",
   openGraph: {
     title: "Reference - AtomHTTP",
     description:

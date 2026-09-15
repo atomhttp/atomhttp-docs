@@ -2,13 +2,8 @@
 
 import { useState } from "react";
 import {
-  Zap,
-  RotateCcw,
   CheckCircle,
   XCircle,
-  Upload,
-  Download,
-  Shield,
   FileJson,
   FileText,
   File,
@@ -17,7 +12,7 @@ import {
 import Section from "@/components/shared/Section";
 import CodeBlock from "@/components/ui/CodeBlock";
 
-type TabId = "fast" | "requests" | "aiohttp" | "httpx";
+type TabId = "atomhttp" | "requests" | "httpx";
 
 interface Tab {
   id: TabId;
@@ -27,18 +22,13 @@ interface Tab {
 
 const tabs: Tab[] = [
   {
-    id: "fast",
+    id: "atomhttp",
     label: "AtomHTTP",
-    badge: <CheckCircle className="w-3 h-3 text-white font-bold" />,
+    badge: <CheckCircle className="w-3 h-3 text-white" />,
   },
   {
     id: "requests",
     label: "requests",
-    badge: <XCircle className="w-3 h-3 text-gray-500" />,
-  },
-  {
-    id: "aiohttp",
-    label: "aiohttp",
     badge: <XCircle className="w-3 h-3 text-gray-500" />,
   },
   {
@@ -48,201 +38,147 @@ const tabs: Tab[] = [
   },
 ];
 
-interface FeatureComparison {
-  feature: string;
-  fast: string;
-  requests: string;
-  aiohttp: string;
-  httpx: string;
-}
-
-const featureData: Record<
-  string,
+const comparisonTableData = [
   {
-    fast: string;
-    requests: string;
-    aiohttp: string;
-    httpx: string;
-    description: string;
-  }
-> = {
-  progress: {
-    fast: "Full support with callbacks",
-    requests: "No progress support",
-    aiohttp: "No progress support",
-    httpx: "No progress support",
-    description:
-      "Upload and download progress tracking with real-time callbacks",
+    feature: "Sync API (no event loop required)",
+    atomhttp: "✓",
+    requests: "✓",
+    httpx: "✓",
   },
-  concurrent: {
-    fast: "Built-in .all() and .spread()",
-    requests: "Requires ThreadPoolExecutor",
-    aiohttp: "Yes (manual asyncio.gather)",
-    httpx: "Yes (manual asyncio.gather)",
-    description: "Execute multiple requests in parallel",
+  {
+    feature: "Async API, same transport as sync",
+    atomhttp: "✓",
+    requests: "✗",
+    httpx: "✓ (separate client)",
   },
-  validation: {
-    fast: "Built-in validateStatus",
-    requests: "Manual check required",
-    aiohttp: "Manual check required",
-    httpx: "Manual check required",
-    description: "Automatic HTTP status code validation",
+  {
+    feature: "Minimal runtime dependencies",
+    atomhttp: "✓ (urllib3 only)",
+    requests: "✓",
+    httpx: "✓ (httpcore)",
   },
-  blob: {
-    fast: "response_type='blob'",
-    requests: "response.content",
-    aiohttp: "response.read()",
-    httpx: "response.content",
-    description: "Binary data handling (images, PDFs, etc.)",
+  {
+    feature: "Cancellation (AbortController)",
+    atomhttp: "✓",
+    requests: "✗",
+    httpx: "Manual task.cancel()",
   },
-  interceptors: {
-    fast: "Full request/response interceptors",
-    requests: "No interceptor support",
-    aiohttp: "No interceptor support",
-    httpx: "Limited middleware",
-    description: "Modify requests/responses globally",
+  {
+    feature: "Persistent thread pool for concurrency",
+    atomhttp: "✓ (.all/.submit/.map)",
+    requests: "Manual ThreadPoolExecutor",
+    httpx: "n/a (asyncio.gather)",
   },
-  headers: {
-    fast: "Simple and clean",
-    requests: "Simple",
-    aiohttp: "Yes",
-    httpx: "Yes",
-    description: "Custom headers support",
+  {
+    feature: "Streaming multipart uploads (constant memory)",
+    atomhttp: "✓ (automatic)",
+    requests: "Manual generator",
+    httpx: "Manual generator",
   },
-};
+  {
+    feature: "Upload/download progress callbacks",
+    atomhttp: "✓",
+    requests: "✗",
+    httpx: "✗",
+  },
+  {
+    feature: "Pagination helper",
+    atomhttp: "✓ (.paginate())",
+    requests: "✗",
+    httpx: "✗",
+  },
+  {
+    feature: "ETag/Cache-Control caching",
+    atomhttp: "✓ (CacheInterceptor)",
+    requests: "Needs requests-cache",
+    httpx: "✗",
+  },
+  {
+    feature: "Request/response interceptors",
+    atomhttp: "✓",
+    requests: "✗",
+    httpx: "✓ (event hooks)",
+  },
+  {
+    feature: "Retry with backoff + Retry-After",
+    atomhttp: "✓ (built-in)",
+    requests: "Needs urllib3 Retry manually",
+    httpx: "Needs external lib",
+  },
+  {
+    feature: "Unix domain socket support",
+    atomhttp: "✓",
+    requests: "Needs requests-unixsocket",
+    httpx: "✓",
+  },
+  {
+    feature: "SOCKS proxy support",
+    atomhttp: "✓ (extra)",
+    requests: "✓ (extra)",
+    httpx: "✓ (extra)",
+  },
+  {
+    feature: "Mock adapter for testing",
+    atomhttp: "✓ (MockAdapter)",
+    requests: "Needs responses/requests-mock",
+    httpx: "✓ (MockTransport)",
+  },
+];
 
 const codeExamples: Record<TabId, Record<string, string>> = {
-  fast: {
-    progress: `import asyncio
-from atomhttp import AtomHTTP
+  atomhttp: {
+    basic: `from atomhttp import AtomHTTP
+
+client = AtomHTTP(base_url='https://jsonplaceholder.typicode.com')
+response = client.get('/posts/1')   # no await needed
+print(response.status, response.data['title'])`,
+    concurrent: `from atomhttp import AtomHTTP
+
+client = AtomHTTP(base_url='https://jsonplaceholder.typicode.com', max_workers=10)
+
+responses = client.all([
+    lambda: client.get('/posts/1'),
+    lambda: client.get('/posts/2'),
+    lambda: client.get('/posts/3'),
+])
+
+for resp in responses:
+    print(f"Post {resp.data['id']}: {resp.data['title'][:30]}...")`,
+    progress: `from atomhttp import AtomHTTP
 
 def on_upload(loaded, total):
-    percent = (loaded / total) * 100
-    print(f"Upload: {percent:.1f}% ({loaded}/{total} bytes)")
+    print(f"Upload: {loaded}/{total} bytes")
 
-async def upload_file():
-    client = AtomHTTP({'baseURL': 'https://httpbin.org'})
+client = AtomHTTP(base_url='https://httpbin.org')
+with open('test.txt', 'rb') as f:
+    resp = client.post('/post', data=f.read(), onUploadProgress=on_upload)
+print("Status:", resp.status)`,
+    cancellation: `from atomhttp import AtomHTTP, AbortController
+from atomhttp.errors import AtomHTTPCancelError
 
-    with open('test.txt', 'rb') as f:
-        resp = await client.post(
-            '/post',
-            data=f,
-            on_upload_progress=on_upload
-        )
+client = AtomHTTP(base_url='https://httpbin.org', timeout=30)
+controller = AbortController()
 
-    print("AtomHTTP Status:", resp.status)
-    await client.close()
-
-asyncio.run(upload_file())`,
-    concurrent: `import asyncio
-from atomhttp import AtomHTTP
-
-async def fetch_posts():
-    client = AtomHTTP({'baseURL': 'https://jsonplaceholder.typicode.com'})
-    
-    tasks = [
-        client.get('/posts/1'),
-        client.get('/posts/2'),
-        client.get('/posts/3')
-    ]
-    
-    responses = await AtomHTTP.all(tasks)
-    
-    for resp in responses:
-        print(f"AtomHTTP: Post {resp.data['id']} → {resp.data['title'][:30]}...")
-    
-    await client.close()
-
-asyncio.run(fetch_posts())`,
-    validation: `import asyncio
-from atomhttp import AtomHTTP
+# controller.abort() from another thread cancels this immediately:
+try:
+    client.get('/delay/10', signal=controller.signal)
+except AtomHTTPCancelError:
+    print("cancelled")`,
+    validation: `from atomhttp import AtomHTTP
 from atomhttp.errors import AtomHTTPRequestError
 
-async def check_status():
-    client = AtomHTTP({
-        'baseURL': 'https://httpbin.org',
-        'validateStatus': lambda status: status == 200
-    })
-    
-    try:
-        resp1 = await client.get('/status/200')
-        print(f"AtomHTTP: Status {resp1.status} OK")
-        
-        resp2 = await client.get('/status/404')
-        print(f"This won't print")
-        
-    except AtomHTTPRequestError as e:
-        print(f"AtomHTTP: Request failed with status {e.response.status}")
-    
-    await client.close()
+client = AtomHTTP(base_url='https://httpbin.org')
 
-asyncio.run(check_status())`,
-    blob: `import asyncio
-from atomhttp import AtomHTTP
-
-async def download_image():
-    client = AtomHTTP()
-    
-    response = await client.get(
-        'https://httpbin.org/image/png',
-        response_type='blob'
-    )
-    
-    with open('atomhttp_image.png', 'wb') as f:
-        f.write(response.data)
-    
-    print(f"AtomHTTP: Saved {len(response.data)} bytes")
-    await client.close()
-
-asyncio.run(download_image())`,
-    interceptors: `import asyncio
-from atomhttp import AtomHTTP
-
-async def main():
-    client = AtomHTTP()
-    
-    async def log_interceptor(config):
-        print(f"Request: {config.method} {config.url}")
-        return config
-    
-    client.interceptors.use(log_interceptor)
-    
-    response = await client.get('https://httpbin.org/get')
-    await client.close()
-
-asyncio.run(main())`,
-    headers: `import asyncio
-from atomhttp import AtomHTTP
-
-async def custom_headers():
-    client = AtomHTTP()
-    
-    response = await client.get(
-        'https://httpbin.org/headers',
-        headers={
-            'Authorization': 'Bearer my-token-123',
-            'X-Custom-Header': 'my-value'
-        }
-    )
-    
-    headers = response.data.get('headers', {})
-    print(f"AtomHTTP: Authorization = {headers.get('Authorization')}")
-    await client.close()
-
-asyncio.run(custom_headers())`,
+try:
+    resp = client.get('/status/404', validateStatus=lambda status: status < 400)
+except AtomHTTPRequestError as e:
+    print(f"Request failed with status {e.response.status}")`,
   },
   requests: {
-    progress: `import requests
+    basic: `import requests
 
-def upload_file():
-    with open('test.txt', 'rb') as f:
-        resp = requests.post(
-            'https://httpbin.org/post',
-            data=f
-        )
-    print("requests Status:", resp.status_code)
-
-upload_file()`,
+response = requests.get('https://jsonplaceholder.typicode.com/posts/1')
+print(response.status_code, response.json()['title'])`,
     concurrent: `import requests
 from concurrent.futures import ThreadPoolExecutor
 
@@ -250,447 +186,382 @@ def fetch_post(post_id):
     resp = requests.get(f'https://jsonplaceholder.typicode.com/posts/{post_id}')
     return resp.json()
 
-def fetch_all():
-    with ThreadPoolExecutor(max_workers=3) as executor:
-        results = list(executor.map(fetch_post, [1, 2, 3]))
-    
-    for data in results:
-        print(f"requests: Post {data['id']} → {data['title'][:30]}...")
+with ThreadPoolExecutor(max_workers=3) as executor:
+    results = list(executor.map(fetch_post, [1, 2, 3]))
 
-fetch_all()`,
+for data in results:
+    print(f"Post {data['id']}: {data['title'][:30]}...")`,
+    progress: `import requests
+
+# requests has no built-in progress callback -- you have to
+# implement chunked reading of the request body yourself.
+def upload_with_progress(path, url):
+    total = len(open(path, 'rb').read())
+    with open(path, 'rb') as f:
+        requests.post(url, data=f)  # no per-chunk hook available`,
+    cancellation: `# requests has no cancellation primitive at all.
+# The only option is closing the underlying socket from another
+# thread, which requests does not expose a supported way to do.`,
     validation: `import requests
 
-def check_status():
-    urls = [
-        'https://httpbin.org/status/200',
-        'https://httpbin.org/status/404'
-    ]
-    
-    for url in urls:
-        resp = requests.get(url)
-        if resp.status_code == 200:
-            print(f"requests: Status {resp.status_code} OK")
-        else:
-            print(f"requests: Status {resp.status_code} failed")
-
-check_status()`,
-    blob: `import requests
-
-def download_image():
-    response = requests.get('https://httpbin.org/image/png')
-    
-    with open('requests_image.png', 'wb') as f:
-        f.write(response.content)
-    
-    print(f"requests: Saved {len(response.content)} bytes")
-
-download_image()`,
-    interceptors: `import requests
-
-# No built-in interceptor support
-# Would need custom wrapper classes
-
-def fetch():
-    response = requests.get('https://httpbin.org/get')
-    print(response.status_code)
-
-fetch()`,
-    headers: `import requests
-
-def custom_headers():
-    response = requests.get(
-        'https://httpbin.org/headers',
-        headers={
-            'Authorization': 'Bearer my-token-123',
-            'X-Custom-Header': 'my-value'
-        }
-    )
-    
-    headers = response.json().get('headers', {})
-    print(f"requests: Authorization = {headers.get('Authorization')}")
-
-custom_headers()`,
+response = requests.get('https://httpbin.org/status/404')
+if response.status_code >= 400:
+    response.raise_for_status()  # manual check required`,
   },
-  aiohttp: {
-    progress: `import asyncio
-import aiohttp
 
-async def upload_file():
-    with open('test.txt', 'rb') as f:
-        data = f.read()
-    
-    async with aiohttp.ClientSession() as session:
-        async with session.post(
-            'https://httpbin.org/post',
-            data=data
-        ) as resp:
-            print("aiohttp Status:", resp.status)
-
-asyncio.run(upload_file())`,
-    concurrent: `import asyncio
-import aiohttp
-
-async def fetch_post(session, post_id):
-    async with session.get(f'https://jsonplaceholder.typicode.com/posts/{post_id}') as resp:
-        return await resp.json()
-
-async def fetch_all():
-    async with aiohttp.ClientSession() as session:
-        tasks = [fetch_post(session, i) for i in range(1, 4)]
-        results = await asyncio.gather(*tasks)
-        
-        for data in results:
-            print(f"aiohttp: Post {data['id']} → {data['title'][:30]}...")
-
-asyncio.run(fetch_all())`,
-    validation: `import asyncio
-import aiohttp
-
-async def check_status():
-    async with aiohttp.ClientSession() as session:
-        for code in [200, 404]:
-            async with session.get(f'https://httpbin.org/status/{code}') as resp:
-                if resp.status == 200:
-                    print(f"aiohttp: Status {resp.status} OK")
-                else:
-                    print(f"aiohttp: Status {resp.status} failed")
-
-asyncio.run(check_status())`,
-    blob: `import asyncio
-import aiohttp
-
-async def download_image():
-    async with aiohttp.ClientSession() as session:
-        async with session.get('https://httpbin.org/image/png') as response:
-            data = await response.read()
-            
-            with open('aiohttp_image.png', 'wb') as f:
-                f.write(data)
-            
-            print(f"aiohttp: Saved {len(data)} bytes")
-
-asyncio.run(download_image())`,
-    interceptors: `import asyncio
-import aiohttp
-
-# No built-in interceptor support
-# Would need custom middleware
-
-async def fetch():
-    async with aiohttp.ClientSession() as session:
-        async with session.get('https://httpbin.org/get') as resp:
-            print(resp.status)
-
-asyncio.run(fetch())`,
-    headers: `import asyncio
-import aiohttp
-
-async def custom_headers():
-    async with aiohttp.ClientSession() as session:
-        async with session.get(
-            'https://httpbin.org/headers',
-            headers={
-                'Authorization': 'Bearer my-token-123',
-                'X-Custom-Header': 'my-value'
-            }
-        ) as response:
-            data = await response.json()
-            headers = data.get('headers', {})
-            print(f"aiohttp: Authorization = {headers.get('Authorization')}")
-
-asyncio.run(custom_headers())`,
-  },
   httpx: {
-    progress: `import asyncio
-import httpx
+    basic: `import httpx
 
-async def upload_file():
-    with open('test.txt', 'rb') as f:
-        data = f.read()
-    
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(
-            'https://httpbin.org/post',
-            content=data
-        )
-        print("httpx Status:", resp.status_code)
-
-asyncio.run(upload_file())`,
+response = httpx.get('https://jsonplaceholder.typicode.com/posts/1')
+print(response.status_code, response.json()['title'])`,
     concurrent: `import asyncio
 import httpx
 
-async def fetch_post(client, post_id):
-    resp = await client.get(f'https://jsonplaceholder.typicode.com/posts/{post_id}')
-    return resp.json()
-
-async def fetch_all():
+async def main():
     async with httpx.AsyncClient() as client:
-        tasks = [fetch_post(client, i) for i in range(1, 4)]
-        results = await asyncio.gather(*tasks)
-        
-        for data in results:
-            print(f"httpx: Post {data['id']} → {data['title'][:30]}...")
+        responses = await asyncio.gather(*[
+            client.get(f'https://jsonplaceholder.typicode.com/posts/{i}')
+            for i in (1, 2, 3)
+        ])
+        for resp in responses:
+            data = resp.json()
+            print(f"Post {data['id']}: {data['title'][:30]}...")
 
-asyncio.run(fetch_all())`,
-    validation: `import asyncio
-import httpx
+asyncio.run(main())`,
+    progress: `# httpx has no built-in progress callback -- you need to
+# wrap the request body in a custom iterator and count bytes yourself.`,
+    cancellation: `import asyncio
 
-async def check_status():
-    async with httpx.AsyncClient() as client:
-        for code in [200, 404]:
-            resp = await client.get(f'https://httpbin.org/status/{code}')
-            if resp.status_code == 200:
-                print(f"httpx: Status {resp.status_code} OK")
-            else:
-                print(f"httpx: Status {resp.status_code} failed")
-
-asyncio.run(check_status())`,
-    blob: `import asyncio
-import httpx
-
-async def download_image():
-    async with httpx.AsyncClient() as client:
-        response = await client.get('https://httpbin.org/image/png')
-        data = response.content
-        
-        with open('httpx_image.png', 'wb') as f:
-            f.write(data)
-        
-        print(f"httpx: Saved {len(data)} bytes")
-
-asyncio.run(download_image())`,
-    interceptors: `import asyncio
-import httpx
-
-# Limited middleware support (event hooks)
-
-async def fetch():
-    async with httpx.AsyncClient() as client:
-        response = await client.get('https://httpbin.org/get')
-        print(response.status_code)
-
-asyncio.run(fetch())`,
-    headers: `import asyncio
-import httpx
-
-async def custom_headers():
-    async with httpx.AsyncClient() as client:
-        response = await client.get(
-            'https://httpbin.org/headers',
-            headers={
-                'Authorization': 'Bearer my-token-123',
-                'X-Custom-Header': 'my-value'
-            }
-        )
-        
-        headers = response.json().get('headers', {})
-        print(f"httpx: Authorization = {headers.get('Authorization')}")
-
-asyncio.run(custom_headers())`,
+task = asyncio.create_task(client.get(url))
+task.cancel()  # asyncio-only, requires holding the Task reference`,
+    validation: `response = httpx.get('https://httpbin.org/status/404')
+response.raise_for_status()  # manual check required`,
   },
 };
 
-const comparisonTableData: FeatureComparison[] = [
+const featureDescriptions: Record<string, string> = {
+  basic: "A single request, the most common case for every library.",
+  concurrent: "Running several requests at once.",
+  progress: "Tracking upload progress with a callback.",
+  cancellation: "Aborting an in-flight request from elsewhere in the program.",
+  validation: "Rejecting non-2xx responses automatically.",
+};
+
+const featureTitles: Record<string, string> = {
+  basic: "Basic Request",
+  concurrent: "Concurrent Requests",
+  progress: "Upload Progress Tracking",
+  cancellation: "Request Cancellation",
+  validation: "Status Validation",
+};
+
+const apiMethods = [
+  ["client.get(url, **kwargs)", "HTTP GET request", "client.get('/users')"],
+  [
+    "client.post(url, data, **kwargs)",
+    "HTTP POST request",
+    "client.post('/users', data={...})",
+  ],
+  [
+    "client.put(url, data, **kwargs)",
+    "HTTP PUT request",
+    "client.put('/users/1', data={...})",
+  ],
+  [
+    "client.patch(url, data, **kwargs)",
+    "HTTP PATCH request",
+    "client.patch('/users/1', data={...})",
+  ],
+  [
+    "client.delete(url, **kwargs)",
+    "HTTP DELETE request",
+    "client.delete('/users/1')",
+  ],
+  [
+    "client.request(method, url, **kwargs)",
+    "Generic request method",
+    "client.request('GET', '/users')",
+  ],
+  [
+    "client.stream(method, url, **kwargs)",
+    "Streamed response, read incrementally",
+    "with client.stream('GET', '/f') as r: ...",
+  ],
+  [
+    "client.download(url, path, **kwargs)",
+    "Download straight to disk",
+    "client.download('/f.zip', 'f.zip')",
+  ],
+  [
+    "client.paginate(url, **kwargs)",
+    "Walk a paginated endpoint",
+    "for items in client.paginate('/users'): ...",
+  ],
+  [
+    "client.all(calls, max_workers=None)",
+    "Run request thunks concurrently",
+    "client.all([lambda: client.get('/a')])",
+  ],
+  [
+    "client.submit(method, url, **kwargs)",
+    "Fire-and-forget on the thread pool",
+    "future = client.submit('GET', '/a')",
+  ],
+  [
+    "client.map(method, urls, **kwargs)",
+    "Same request, many URLs, concurrently",
+    "client.map('GET', ['/a', '/b'])",
+  ],
+  [
+    "client.close()",
+    "Release pooled connections and the thread pool",
+    "client.close()",
+  ],
+  [
+    "client.as_async() / async_client.as_sync()",
+    "Convert between sync/async, sharing state",
+    "client.as_async()",
+  ],
+];
+
+const configReferenceRows = [
+  ["base_url", 'str = ""', "Prefix for relative URLs"],
+  ["timeout", "int/float/timedelta = 30", "Request timeout in seconds"],
+  ["headers", "dict = {}", "Default/per-request headers"],
+  ["params", "dict = {}", "Query string parameters"],
+  ["data", "Any = None", "Request body: dict/list, FormData, str, or bytes"],
+  ["cookies", "bool = True", "Enable the client's persistent cookie jar"],
+  ["max_workers", "int = 10", "Thread pool size for .all()/.submit()/.map()"],
+  ["maxRedirects", "int = 5", "Max redirects to follow (0 disables)"],
+  [
+    "maxContentLength / maxBodyLength",
+    "int = -1",
+    "Response/request size caps in bytes (-1 = unlimited)",
+  ],
+  ["responseType", 'str = "json"', "json | text | blob | arraybuffer | stream"],
+  [
+    "validateStatus",
+    "Callable | None",
+    "fn(status) -> bool; raises AtomHTTPRequestError on False",
+  ],
+  ["auth", "dict | None", '{"username": ..., "password": ...} for Basic Auth'],
+  [
+    "proxy",
+    "dict | None",
+    "{'host': 'http://...'} or socks5://... ; falls back to env vars",
+  ],
+  [
+    "verify",
+    "bool | str = True",
+    "TLS verification on/off, or a custom CA bundle path",
+  ],
+  ["cert", "str | tuple | None", "mTLS client certificate"],
+  [
+    "retryConfig",
+    "dict | None",
+    "max_retries, backoff_factor, status_forcelist",
+  ],
+  ["signal", "AbortSignal | None", "AbortController().signal for cancellation"],
+  ["socketPath", "str | None", "Unix domain socket path"],
+  [
+    "onUploadProgress / onDownloadProgress",
+    "Callable | None",
+    "fn(loaded, total)",
+  ],
+  [
+    "onRequestStart / onRetry / onRedirect",
+    "Callable | None",
+    "Lightweight observability hooks",
+  ],
+  [
+    "adapter",
+    "BaseAdapter | None",
+    "Per-request adapter override, e.g. MockAdapter",
+  ],
+];
+
+const errorCodesRows = [
+  [
+    "ERR_BAD_{status}",
+    "Bad request (4xx) or rejected by validateStatus",
+    "AtomHTTPRequestError",
+  ],
+  [
+    "ERR_NETWORK",
+    "DNS failure, connection refused, or other transport error",
+    "AtomHTTPNetworkError",
+  ],
+  ["ECONNABORTED", "Request exceeded its timeout", "AtomHTTPTimeoutError"],
+  [
+    "ERR_CANCELED",
+    "Request was aborted via AbortController",
+    "AtomHTTPCancelError",
+  ],
+];
+
+const responseTypesData = [
   {
-    feature: "Async/Await",
-    fast: "✓",
-    requests: "✓",
-    aiohttp: "✓",
-    httpx: "✓",
+    icon: FileJson,
+    name: "json",
+    desc: "Parses as dict/list. Default option -- falls back to raw text if the body isn't valid JSON.",
   },
   {
-    feature: "Upload Progress",
-    fast: "✓",
-    requests: "✗",
-    aiohttp: "✗",
-    httpx: "✗",
+    icon: FileText,
+    name: "text",
+    desc: "Returns the body as a decoded str. Good for HTML, CSV, plain text.",
   },
   {
-    feature: "Download Progress",
-    fast: "✓",
-    requests: "✗",
-    aiohttp: "✗",
-    httpx: "✗",
+    icon: File,
+    name: "blob / arraybuffer",
+    desc: "Returns the raw body as bytes. For images, PDFs, ZIP files.",
   },
   {
-    feature: "Interceptors",
-    fast: "Full",
-    requests: "✗",
-    aiohttp: "✗",
-    httpx: "Limited",
-  },
-  {
-    feature: "validateStatus",
-    fast: "Built-in",
-    requests: "✗",
-    aiohttp: "✗",
-    httpx: "✗",
-  },
-  {
-    feature: "Blob/ArrayBuffer",
-    fast: "response_type",
-    requests: "content",
-    aiohttp: "read()",
-    httpx: "content",
-  },
-  { feature: "Base URL", fast: "✓", requests: "✓", aiohttp: "✓", httpx: "✓" },
-  {
-    feature: "Concurrent Helpers",
-    fast: ".all()/.spread()",
-    requests: "ThreadPool",
-    aiohttp: "manual",
-    httpx: "manual",
-  },
-  {
-    feature: "Type Hints",
-    fast: "Full",
-    requests: "Partial",
-    aiohttp: "✓",
-    httpx: "✓",
+    icon: Wind,
+    name: "stream",
+    desc: "Raw urllib3.HTTPResponse for manual reading -- prefer client.stream() instead for the friendlier API.",
   },
 ];
 
-const starStyles = `
-  .stars-container {
-    position: absolute;
-    inset: 0;
-    overflow: hidden;
-  }
-  
-  .star {
-    position: absolute;
-    width: 2px;
-    height: 2px;
-    background: white;
-    border-radius: 50%;
-    opacity: 0;
-    animation: twinkle 3s infinite ease-in-out;
-  }
-  
-  .star.medium {
-    width: 1.5px;
-    height: 1.5px;
-  }
-  
-  .star.small {
-    width: 1px;
-    height: 1px;
-  }
-  
-  @keyframes twinkle {
-    0%, 100% {
-      opacity: 0;
-      transform: scale(0.5);
-    }
-    50% {
-      opacity: 1;
-      transform: scale(1);
-    }
-  }
-`;
+const migrationExamples = [
+  {
+    title: "Making a request",
+    before: `# v1
+client = AtomHTTP({'baseURL': 'https://api.example.com'})
+response = await client.get('/users/1')
+await client.close()`,
+    after: `# v2.1
+client = AtomHTTP(base_url='https://api.example.com')
+response = client.get('/users/1')   # no await needed
+client.close()`,
+  },
+  {
+    title: "Concurrent requests",
+    before: `# v1
+responses = await AtomHTTP.all([
+    client.get('/a'), client.get('/b'),
+])`,
+    after: `# v2.1
+responses = client.all([
+    lambda: client.get('/a'),
+    lambda: client.get('/b'),
+])
+# or, if you still want async: await async_client.all([async_client.get('/a'), ...])`,
+  },
+  {
+    title: "Async, if you still want it",
+    before: `# v1 -- async was the only option
+client = AtomHTTP({'baseURL': '...'})
+response = await client.get('/users/1')`,
+    after: `# v2.1 -- async is optional, via a separate class
+async with AsyncAtomHTTP(base_url='...') as client:
+    response = await client.get('/users/1')`,
+  },
+  {
+    title: "Progress callback naming",
+    before: `# v1
+await client.post('/upload', data=f, on_upload_progress=cb)`,
+    after: `# v2.1 -- camelCase, matching axios-style config
+client.post('/upload', data=f, onUploadProgress=cb)`,
+  },
+];
 
-const ComparisonTable = () => {
-  const stars = Array.from({ length: 80 }, (_, i) => ({
-    id: i,
-    left: Math.random() * 100,
-    top: Math.random() * 100,
-    size:
-      Math.random() > 0.7 ? "medium" : Math.random() > 0.4 ? "small" : "normal",
-    delay: Math.random() * 4,
-    duration: 1.5 + Math.random() * 2.5,
-  }));
-
-  return (
-    <div className="overflow-x-auto rounded-xl border border-[#1a1a1a] mb-8">
-      <style>{starStyles}</style>
-      <table className="w-full border-collapse min-w-150">
-        <thead>
-          <tr className="border-b border-[#1f1f1f] bg-[#0a0a0a]">
-            <th className="text-left py-3 px-4 text-gray-400 font-medium">
-              Feature
-            </th>
-            <th className="text-left py-3 px-4 relative overflow-hidden bg-[#0a0a0a]">
-              <div className="stars-container absolute inset-0 pointer-events-none">
-                {stars.map((star) => (
-                  <div
-                    key={star.id}
-                    className={`star ${star.size}`}
-                    style={{
-                      left: `${star.left}%`,
-                      top: `${star.top}%`,
-                      animationDelay: `${star.delay}s`,
-                      animationDuration: `${star.duration}s`,
-                    }}
-                  />
-                ))}
-              </div>
-              <span className="relative z-10 text-white font-bold">
-                AtomHTTP
-              </span>
-            </th>
-            <th className="text-left py-3 px-4 text-gray-500 font-medium bg-[#0a0a0a]">
-              requests
-            </th>
-            <th className="text-left py-3 px-4 text-gray-500 font-medium bg-[#0a0a0a]">
-              aiohttp
-            </th>
-            <th className="text-left py-3 px-4 text-gray-500 font-medium bg-[#0a0a0a]">
-              httpx
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {comparisonTableData.map((row, i) => (
-            <tr
+const Table = ({
+  headers,
+  rows,
+}: {
+  headers: string[];
+  rows: (string | React.ReactNode)[][];
+}) => (
+  <div className="overflow-x-auto rounded-xl border border-[#1a1a1a] mb-6">
+    <table className="w-full border-collapse">
+      <thead>
+        <tr className="border-b border-[#1f1f1f]">
+          {headers.map((h, i) => (
+            <th
               key={i}
-              className="border-b border-[#141414] hover:bg-white/2 transition-colors"
+              className="text-left py-3 px-4 text-gray-400 font-medium"
             >
-              <td className="py-3 px-4 text-gray-300 text-sm font-medium">
-                {row.feature}
-              </td>
-              <td className="py-3 px-4 text-white font-bold text-sm relative bg-[#0a0a0a]/30">
-                {row.fast === "✓" ? (
-                  <CheckCircle className="w-4 h-4 text-white font-bold inline" />
-                ) : row.fast === "✗" ? (
-                  <XCircle className="w-4 h-4 text-gray-500 inline" />
-                ) : (
-                  row.fast
-                )}
-              </td>
-              <td className="py-3 px-4 text-gray-500 text-sm">
-                {row.requests === "✓" ? (
-                  <CheckCircle className="w-4 h-4 text-gray-500 inline" />
-                ) : row.requests === "✗" ? (
-                  <XCircle className="w-4 h-4 text-gray-500 inline" />
-                ) : (
-                  row.requests
-                )}
-              </td>
-              <td className="py-3 px-4 text-gray-500 text-sm">
-                {row.aiohttp === "✓" ? (
-                  <CheckCircle className="w-4 h-4 text-gray-500 inline" />
-                ) : row.aiohttp === "✗" ? (
-                  <XCircle className="w-4 h-4 text-gray-500 inline" />
-                ) : (
-                  row.aiohttp
-                )}
-              </td>
-              <td className="py-3 px-4 text-gray-500 text-sm">
-                {row.httpx === "✓" ? (
-                  <CheckCircle className="w-4 h-4 text-gray-500 inline" />
-                ) : row.httpx === "✗" ? (
-                  <XCircle className="w-4 h-4 text-gray-500 inline" />
-                ) : (
-                  row.httpx
-                )}
-              </td>
-            </tr>
+              {h}
+            </th>
           ))}
-        </tbody>
-      </table>
-    </div>
-  );
-};
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row, i) => (
+          <tr
+            key={i}
+            className="border-b border-[#141414] last:border-0 hover:bg-white/2 transition-colors"
+          >
+            {row.map((cell, j) => (
+              <td
+                key={j}
+                className={`py-3 px-4 text-sm ${j === 0 ? "font-mono text-gray-300" : "text-gray-500"}`}
+              >
+                {cell}
+              </td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+);
+
+const ComparisonTable = () => (
+  <div className="overflow-x-auto rounded-xl border border-[#1a1a1a] mb-8">
+    <table className="w-full border-collapse min-w-[42rem]">
+      <thead>
+        <tr className="border-b border-[#1f1f1f] bg-[#0a0a0a]">
+          <th className="text-left py-3 px-4 text-gray-400 font-medium">
+            Feature
+          </th>
+          <th className="text-left py-3 px-4 text-white font-bold bg-white/5">
+            AtomHTTP
+          </th>
+          <th className="text-left py-3 px-4 text-gray-500 font-medium">
+            requests
+          </th>
+          <th className="text-left py-3 px-4 text-gray-500 font-medium">
+            httpx
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        {comparisonTableData.map((row, i) => (
+          <tr
+            key={i}
+            className="border-b border-[#141414] hover:bg-white/2 transition-colors"
+          >
+            <td className="py-3 px-4 text-gray-300 text-sm font-medium">
+              {row.feature}
+            </td>
+            <td className="py-3 px-4 text-white text-sm font-medium bg-white/[0.03]">
+              {row.atomhttp === "✓" ? (
+                <CheckCircle className="w-4 h-4 text-white inline" />
+              ) : (
+                row.atomhttp
+              )}
+            </td>
+            <td className="py-3 px-4 text-gray-500 text-sm">
+              {row.requests === "✗" ? (
+                <XCircle className="w-4 h-4 text-gray-600 inline" />
+              ) : (
+                row.requests
+              )}
+            </td>
+            <td className="py-3 px-4 text-gray-500 text-sm">
+              {row.httpx === "✗" ? (
+                <XCircle className="w-4 h-4 text-gray-600 inline" />
+              ) : (
+                row.httpx
+              )}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+);
 
 const FeatureTabs = ({
   activeTab,
@@ -718,72 +589,33 @@ const FeatureTabs = ({
 );
 
 const FeatureCard = ({
-  title,
-  description,
   activeTab,
   featureKey,
 }: {
-  title: string;
-  description: string;
   activeTab: TabId;
   featureKey: string;
 }) => (
   <div className="border border-[#1a1a1a] rounded-xl p-5 hover:border-[#2a2a2a] transition-all">
     <div className="flex items-center justify-between mb-3">
-      <h3 className="text-lg font-medium text-white">{title}</h3>
-      <span
-        className={`text-sm px-2 py-0.5 rounded-full ${
-          activeTab === "fast"
-            ? "bg-white/20 text-white font-bold"
-            : "bg-gray-500/20 text-gray-400"
-        }`}
-      >
-        {activeTab === "fast"
-          ? "Supported"
-          : activeTab === "requests"
-            ? "Not Supported"
-            : "Limited"}
-      </span>
+      <h3 className="text-lg font-medium text-white">
+        {featureTitles[featureKey]}
+      </h3>
     </div>
-    <p className="text-gray-400 text-sm mb-4">{description}</p>
+    <p className="text-gray-400 text-sm mb-4">
+      {featureDescriptions[featureKey]}
+    </p>
     <CodeBlock language="python" code={codeExamples[activeTab][featureKey]} />
   </div>
 );
 
 export default function ReferencePage() {
-  const [activeTab, setActiveTab] = useState<TabId>("fast");
-
-  const features = [
-    {
-      key: "progress",
-      title: "Upload Progress Tracking",
-      description: featureData.progress.description,
-    },
-    {
-      key: "concurrent",
-      title: "Concurrent Requests",
-      description: featureData.concurrent.description,
-    },
-    {
-      key: "validation",
-      title: "Status Validation",
-      description: featureData.validation.description,
-    },
-    {
-      key: "blob",
-      title: "Binary Data (Blob)",
-      description: featureData.blob.description,
-    },
-    {
-      key: "interceptors",
-      title: "Request/Response Interceptors",
-      description: featureData.interceptors.description,
-    },
-    {
-      key: "headers",
-      title: "Custom Headers",
-      description: featureData.headers.description,
-    },
+  const [activeTab, setActiveTab] = useState<TabId>("atomhttp");
+  const featureKeys = [
+    "basic",
+    "concurrent",
+    "progress",
+    "cancellation",
+    "validation",
   ];
 
   return (
@@ -793,7 +625,8 @@ export default function ReferencePage() {
           Reference
         </h1>
         <p className="text-sm sm:text-base text-gray-400">
-          Complete API reference, comparisons, and practical examples
+          Complete API reference, comparisons, migration notes, and practical
+          examples
         </p>
       </div>
 
@@ -804,134 +637,86 @@ export default function ReferencePage() {
               Comparison with Other Libraries
             </h2>
             <p className="text-sm sm:text-base text-gray-400 mb-3">
-              AtomHTTP delivers the broadest feature set among Python HTTP
-              clients: progress callbacks, full interceptor chain, concurrent
-              helpers, Blob/ArrayBuffer support, and fine‑grained limits — all
-              with a clean, modern API.
+              AtomHTTP combines what requests and httpx each do well --
+              sync-first ergonomics, optional async, and modern features like
+              cancellation and streaming -- in one client built on urllib3.
             </p>
           </div>
 
           <ComparisonTable />
 
-          <div className="p-4 rounded-xl border border-[#1a1a1a]">
-            <p className="text-gray-400 text-sm">
-              <span className="text-white font-bold">AtomHTTP</span> combines
-              the best features from existing libraries while adding unique
-              capabilities like progress tracking, a full interceptor system,
-              and comprehensive type hints. It is the only Python HTTP client
-              that provides upload/download progress callbacks out of the box.
-            </p>
+          <div className="mb-8">
+            <h3 className="text-lg font-medium text-white mb-3">
+              Side-by-side code
+            </h3>
+            <FeatureTabs activeTab={activeTab} setActiveTab={setActiveTab} />
+            <div className="space-y-6">
+              {featureKeys.map((key) => (
+                <FeatureCard key={key} activeTab={activeTab} featureKey={key} />
+              ))}
+            </div>
           </div>
         </Section>
 
-        <Section id="feature-comparison" className="scroll-mt-24">
+        <Section id="examples" className="scroll-mt-24">
           <div className="mb-4">
             <h2 className="text-xl sm:text-2xl font-semibold text-white mb-2">
-              Feature Comparison
+              Complete Examples
             </h2>
             <p className="text-sm sm:text-base text-gray-400 mb-3">
-              Compare AtomHTTP with other popular HTTP clients side by side.
-              Each tab shows the same feature implemented in different
-              libraries.
+              Two full, realistic examples combining several features.
             </p>
           </div>
-
-          <FeatureTabs activeTab={activeTab} setActiveTab={setActiveTab} />
 
           <div className="space-y-6">
-            {features.map((feature) => (
-              <FeatureCard
-                key={feature.key}
-                title={feature.title}
-                description={feature.description}
-                activeTab={activeTab}
-                featureKey={feature.key}
+            <div>
+              <p className="text-sm text-gray-300 mb-2">
+                Authenticated API client with retries and caching:
+              </p>
+              <CodeBlock
+                language="python"
+                code={`from atomhttp import AtomHTTP
+from atomhttp.cache import CacheInterceptor
+
+client = AtomHTTP(
+    base_url="https://api.example.com",
+    timeout=10,
+    headers={"Authorization": "Bearer YOUR_TOKEN"},
+    retryConfig={"max_retries": 3, "status_forcelist": [500, 502, 503, 504]},
+)
+
+cache = CacheInterceptor()
+client.interceptors.request.use(cache.on_request)
+client.interceptors.response.use(cache.on_response)
+
+for items in client.paginate("/users"):
+    for user in items:
+        print(user["name"])
+
+client.close()`}
               />
-            ))}
-          </div>
-        </Section>
+            </div>
 
-        <Section id="why-atomhttp" className="scroll-mt-24">
-          <div className="mb-4">
-            <h2 className="text-xl sm:text-2xl font-semibold text-white mb-2">
-              Why AtomHTTP Stands Out
-            </h2>
-            <p className="text-sm sm:text-base text-gray-400 mb-3">
-              AtomHTTP is the only library that combines all these features in
-              one package:
-            </p>
-          </div>
+            <div>
+              <p className="text-sm text-gray-300 mb-2">
+                Concurrent file downloads with a shared thread pool:
+              </p>
+              <CodeBlock
+                language="python"
+                code={`from atomhttp import AtomHTTP
 
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            <div className="border border-white/20 rounded-xl p-4 bg-white/5">
-              <Upload className="text-white font-bold w-5 h-5 mb-2" />
-              <h3 className="font-medium text-white mb-1">Upload Progress</h3>
-              <p className="text-xs text-gray-500">
-                Real-time upload progress callbacks
-              </p>
-            </div>
-            <div className="border border-white/20 rounded-xl p-4 bg-white/5">
-              <Download className="text-white font-bold w-5 h-5 mb-2" />
-              <h3 className="font-medium text-white mb-1">Download Progress</h3>
-              <p className="text-xs text-gray-500">
-                Track download progress with ease
-              </p>
-            </div>
-            <div className="border border-white/20 rounded-xl p-4 bg-white/5">
-              <RotateCcw className="text-white font-bold w-5 h-5 mb-2" />
-              <h3 className="font-medium text-white mb-1">Interceptors</h3>
-              <p className="text-xs text-gray-500">
-                Request/response middleware
-              </p>
-            </div>
-            <div className="border border-white/20 rounded-xl p-4 bg-white/5">
-              <Shield className="text-white font-bold w-5 h-5 mb-2" />
-              <h3 className="font-medium text-white mb-1">Status Validation</h3>
-              <p className="text-xs text-gray-500">Built-in validateStatus</p>
-            </div>
-            <div className="border border-white/20 rounded-xl p-4 bg-white/5">
-              <Zap className="text-white font-bold w-5 h-5 mb-2" />
-              <h3 className="font-medium text-white mb-1">
-                Concurrent Helpers
-              </h3>
-              <p className="text-xs text-gray-500">
-                .all() and .spread() methods
-              </p>
-            </div>
-            <div className="border border-white/20 rounded-xl p-4 bg-white/5">
-              <File className="text-white font-bold w-5 h-5 mb-2" />
-              <h3 className="font-medium text-white mb-1">Blob/ArrayBuffer</h3>
-              <p className="text-xs text-gray-500">
-                Simple binary data handling
-              </p>
-            </div>
-          </div>
+client = AtomHTTP(base_url="https://files.example.com", max_workers=8)
 
-          <div className="mt-6 p-5 rounded-xl border border-white/20 bg-white/5">
-            <p className="text-gray-300 text-sm leading-relaxed">
-              <span className="text-white font-bold">AtomHTTP</span> is the only
-              Python HTTP client that can handle
-              <span className="text-white">
-                {" "}
-                file uploads with progress tracking
-              </span>
-              ,
-              <span className="text-white">
-                {" "}
-                concurrent requests with .all()/.spread()
-              </span>
-              ,<span className="text-white"> automatic status validation</span>,
-              <span className="text-white">
-                {" "}
-                binary data with response_type="blob"
-              </span>
-              ,
-              <span className="text-white">
-                {" "}
-                and request/response interceptors
-              </span>{" "}
-              — all in a single library.
-            </p>
+urls = ["/a.zip", "/b.zip", "/c.zip"]
+futures = [client.submit("GET", "/download" + u) for u in urls]
+
+for url, future in zip(urls, futures):
+    response = future.result()
+    with open(url.lstrip("/"), "wb") as f:
+        f.write(response.data)
+    print(f"saved {url}")`}
+              />
+            </div>
           </div>
         </Section>
 
@@ -941,74 +726,30 @@ export default function ReferencePage() {
               API Methods Reference
             </h2>
             <p className="text-sm sm:text-base text-gray-400 mb-3">
-              Complete reference of all available methods on the AtomHTTP client
-              and helper functions.
+              Every method exists identically on <code>AsyncAtomHTTP</code>,
+              just awaited.
             </p>
           </div>
+          <Table
+            headers={["Method", "Description", "Example"]}
+            rows={apiMethods}
+          />
+        </Section>
 
-          <div className="overflow-x-auto rounded-xl border border-[#1a1a1a]">
-            <table className="w-full border-collapse min-w-175">
-              <thead>
-                <tr className="border-b border-[#1f1f1f]">
-                  <th className="text-left py-3 px-4 text-gray-400 font-medium">
-                    Method
-                  </th>
-                  <th className="text-left py-3 px-4 text-gray-400 font-medium">
-                    Description
-                  </th>
-                  <th className="text-left py-3 px-4 text-gray-400 font-medium">
-                    Example
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr className="border-b border-[#141414] hover:bg-white/2 transition-colors">
-                  <td className="py-3 px-4 font-mono text-xs text-gray-300">
-                    client.get(url, params)
-                  </td>
-                  <td className="py-3 px-4 text-sm text-gray-500">
-                    HTTP GET request
-                  </td>
-                  <td className="py-3 px-4 font-mono text-xs text-gray-600">
-                    await client.get("/users")
-                  </td>
-                </tr>
-                <tr className="border-b border-[#141414] hover:bg-white/2 transition-colors">
-                  <td className="py-3 px-4 font-mono text-xs text-gray-300">
-                    client.post(url, data)
-                  </td>
-                  <td className="py-3 px-4 text-sm text-gray-500">
-                    HTTP POST request
-                  </td>
-                  <td className="py-3 px-4 font-mono text-xs text-gray-600">
-                    await client.post("/users", data={"{...}"})
-                  </td>
-                </tr>
-                <tr className="border-b border-[#141414] hover:bg-white/2 transition-colors">
-                  <td className="py-3 px-4 font-mono text-xs text-gray-300">
-                    AtomHTTP.all(tasks)
-                  </td>
-                  <td className="py-3 px-4 text-sm text-gray-500">
-                    Execute concurrent requests
-                  </td>
-                  <td className="py-3 px-4 font-mono text-xs text-gray-600">
-                    responses = await AtomHTTP.all(tasks)
-                  </td>
-                </tr>
-                <tr className="border-b border-[#141414] hover:bg-white/2 transition-colors">
-                  <td className="py-3 px-4 font-mono text-xs text-gray-300">
-                    client.close()
-                  </td>
-                  <td className="py-3 px-4 text-sm text-gray-500">
-                    Clean up resources
-                  </td>
-                  <td className="py-3 px-4 font-mono text-xs text-gray-600">
-                    await client.close()
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+        <Section id="config-reference" className="scroll-mt-24">
+          <div className="mb-4">
+            <h2 className="text-xl sm:text-2xl font-semibold text-white mb-2">
+              RequestConfig Fields
+            </h2>
+            <p className="text-sm sm:text-base text-gray-400 mb-3">
+              Every field below can be set on the client (as a default) or
+              per-request (overriding the default).
+            </p>
           </div>
+          <Table
+            headers={["Field", "Type / Default", "Description"]}
+            rows={configReferenceRows}
+          />
         </Section>
 
         <Section id="error-codes" className="scroll-mt-24">
@@ -1018,62 +759,15 @@ export default function ReferencePage() {
             </h2>
             <p className="text-sm sm:text-base text-gray-400 mb-3">
               AtomHTTP provides standardized error codes for programmatic error
-              handling.
+              handling. By default no exception is raised for 4xx/5xx -- opt in
+              with <code>validateStatus</code> or{" "}
+              <code>raise_for_status()</code>.
             </p>
           </div>
-
-          <div className="overflow-x-auto rounded-xl border border-[#1a1a1a]">
-            <table className="w-full border-collapse">
-              <thead>
-                <tr className="border-b border-[#1f1f1f]">
-                  <th className="text-left py-3 px-4 text-gray-400 font-medium">
-                    Error Code
-                  </th>
-                  <th className="text-left py-3 px-4 text-gray-400 font-medium">
-                    Description
-                  </th>
-                  <th className="text-left py-3 px-4 text-gray-400 font-medium">
-                    Exception Type
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr className="border-b border-[#141414] hover:bg-white/2 transition-colors">
-                  <td className="py-3 px-4 font-mono text-sm text-gray-300">
-                    ERR_BAD_REQUEST
-                  </td>
-                  <td className="py-3 px-4 text-sm text-gray-500">
-                    Bad request (4xx) or malformed request
-                  </td>
-                  <td className="py-3 px-4 text-sm text-gray-500">
-                    AtomHTTPRequestError
-                  </td>
-                </tr>
-                <tr className="border-b border-[#141414] hover:bg-white/2 transition-colors">
-                  <td className="py-3 px-4 font-mono text-sm text-gray-300">
-                    ERR_NETWORK
-                  </td>
-                  <td className="py-3 px-4 text-sm text-gray-500">
-                    Network connectivity issues
-                  </td>
-                  <td className="py-3 px-4 text-sm text-gray-500">
-                    AtomHTTPNetworkError
-                  </td>
-                </tr>
-                <tr className="border-b border-[#141414] hover:bg-white/2 transition-colors">
-                  <td className="py-3 px-4 font-mono text-sm text-gray-300">
-                    ECONNABORTED
-                  </td>
-                  <td className="py-3 px-4 text-sm text-gray-500">
-                    Request exceeded timeout limit
-                  </td>
-                  <td className="py-3 px-4 text-sm text-gray-500">
-                    AtomHTTPTimeoutError
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+          <Table
+            headers={["Error Code", "Description", "Exception Type"]}
+            rows={errorCodesRows}
+          />
         </Section>
 
         <Section id="response-types" className="scroll-mt-24">
@@ -1085,55 +779,64 @@ export default function ReferencePage() {
               AtomHTTP supports multiple response types for different use cases.
             </p>
           </div>
-
           <div className="grid sm:grid-cols-2 gap-4">
-            <div className="border border-[#1a1a1a] rounded-xl p-4 hover:border-[#2a2a2a] transition-all">
-              <div className="flex items-center gap-2 mb-2">
-                <FileJson className="text-white font-bold w-4 h-4" />
-                <code className="text-sm font-mono text-white font-bold">
-                  json
-                </code>
+            {responseTypesData.map((rt) => (
+              <div
+                key={rt.name}
+                className="border border-[#1a1a1a] rounded-xl p-4 hover:border-[#2a2a2a] transition-all"
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <rt.icon className="text-white w-4 h-4" />
+                  <code className="text-sm font-mono text-white font-bold">
+                    {rt.name}
+                  </code>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">{rt.desc}</p>
               </div>
-              <p className="text-xs text-gray-500 mt-1">
-                Parse response as JSON (dict/list). Default option for API
-                calls.
-              </p>
-            </div>
-            <div className="border border-[#1a1a1a] rounded-xl p-4 hover:border-[#2a2a2a] transition-all">
-              <div className="flex items-center gap-2 mb-2">
-                <FileText className="text-white font-bold w-4 h-4" />
-                <code className="text-sm font-mono text-white font-bold">
-                  text
-                </code>
+            ))}
+          </div>
+        </Section>
+
+        <Section id="migration" className="scroll-mt-24">
+          <div className="mb-4">
+            <h2 className="text-xl sm:text-2xl font-semibold text-white mb-2">
+              Migrating from v1
+            </h2>
+            <p className="text-sm sm:text-base text-gray-400 mb-3">
+              v2 is a full rewrite: sync-first by default, minimal runtime
+              dependencies, built on urllib3. The biggest change is that{" "}
+              <code>AtomHTTP</code> is no longer async -- if you want async, use
+              the new <code>AsyncAtomHTTP</code> class instead.
+            </p>
+          </div>
+
+          <div className="space-y-6">
+            {migrationExamples.map((ex) => (
+              <div key={ex.title}>
+                <p className="text-sm text-gray-300 mb-2">{ex.title}</p>
+                <div className="grid sm:grid-cols-2 gap-3">
+                  <div>
+                    <p className="text-xs text-gray-500 mb-1">Before (v1)</p>
+                    <CodeBlock language="python" code={ex.before} />
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 mb-1">After (v2.1)</p>
+                    <CodeBlock language="python" code={ex.after} />
+                  </div>
+                </div>
               </div>
-              <p className="text-xs text-gray-500 mt-1">
-                Return response as plain text string. Good for HTML, CSV, plain
-                text.
-              </p>
-            </div>
-            <div className="border border-[#1a1a1a] rounded-xl p-4 hover:border-[#2a2a2a] transition-all">
-              <div className="flex items-center gap-2 mb-2">
-                <File className="text-white font-bold w-4 h-4" />
-                <code className="text-sm font-mono text-white font-bold">
-                  blob
-                </code>
-              </div>
-              <p className="text-xs text-gray-500 mt-1">
-                Return response as bytes. Perfect for images, PDFs, ZIP files.
-              </p>
-            </div>
-            <div className="border border-[#1a1a1a] rounded-xl p-4 hover:border-[#2a2a2a] transition-all">
-              <div className="flex items-center gap-2 mb-2">
-                <Wind className="text-white font-bold w-4 h-4" />
-                <code className="text-sm font-mono text-white font-bold">
-                  stream
-                </code>
-              </div>
-              <p className="text-xs text-gray-500 mt-1">
-                Return async iterator. Best for very large files and video
-                streaming.
-              </p>
-            </div>
+            ))}
+          </div>
+
+          <div className="mt-6 p-4 rounded-xl border border-[#1a1a1a]">
+            <p className="text-gray-400 text-sm">
+              Other breaking changes: the constructor now takes plain keyword
+              arguments (<code>AtomHTTP(base_url=..., timeout=...)</code>)
+              instead of a single config dict; several internal v1 modules that
+              were dead code (unused duplicate adapters, an unused cookie
+              manager, an unused redirect handler) were removed entirely rather
+              than ported forward.
+            </p>
           </div>
         </Section>
       </div>

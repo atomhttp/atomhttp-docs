@@ -23,14 +23,14 @@ import Link from "next/link";
 const features = [
   {
     icon: Zap,
-    title: "HTTP Methods",
-    description: "GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS",
+    title: "Sync by Default",
+    description: "No event loop needed for everyday HTTP calls",
     type: "methods",
   },
   {
     icon: Layers,
-    title: "Interceptors",
-    description: "Request/response middleware with eject support",
+    title: "Interceptors & Hooks",
+    description: "Request/response middleware plus onRetry/onRedirect hooks",
     type: "interceptors",
   },
   {
@@ -41,26 +41,26 @@ const features = [
   },
   {
     icon: Shield,
-    title: "Data Types",
-    description: "JSON, FormData, Blob, ArrayBuffer, Stream",
+    title: "Cancellation",
+    description: "axios-style AbortController, works sync or async",
     type: "dataTypes",
   },
   {
     icon: Lock,
-    title: "Auth Layer",
-    description: "Basic, Bearer, custom headers",
+    title: "Auth & TLS",
+    description: "Basic/Bearer auth, mTLS, custom CA bundles",
     type: "auth",
   },
   {
     icon: Globe,
-    title: "Concurrent Requests",
-    description: ".all() + .spread() helpers",
+    title: "Concurrency Without Async",
+    description: ".all() / .submit() / .map() on a persistent thread pool",
     type: "concurrent",
   },
   {
     icon: Rocket,
     title: "Performance",
-    description: "Keep-Alive, compression, connection pooling",
+    description: "Keep-Alive, compression, connection pooling, retries",
     type: "performance",
   },
   {
@@ -72,75 +72,72 @@ const features = [
 ];
 
 const stats = [
-  { value: "44+", label: "Built-in Features" },
+  { value: "0", label: "Optional Dependencies" },
   { value: "100%", label: "Type Hints Coverage" },
-  { value: "1", label: "Core Dependency" },
+  { value: "1", label: "Core Dependency (urllib3)" },
   { value: "3.8+", label: "Python Version" },
 ];
 
 const comparisonData = [
   {
-    feature: "Async/Await",
+    feature: "Sync API (no event loop)",
+    atomhttp: "✓",
+    requests: "✓",
+    httpx: "✓",
+  },
+  {
+    feature: "Optional Async (same transport)",
     atomhttp: "✓",
     requests: "✗",
-    aiohttp: "✓",
-    httpx: "✓",
+    httpx: "✓ (separate client)",
+  },
+  {
+    feature: "Cancellation (AbortController)",
+    atomhttp: "✓",
+    requests: "✗",
+    httpx: "Manual",
   },
   {
     feature: "Interceptors",
     atomhttp: "✓",
     requests: "✗",
-    aiohttp: "Limited",
     httpx: "✓",
   },
   {
     feature: "Upload Progress",
     atomhttp: "✓",
     requests: "✗",
-    aiohttp: "✗",
     httpx: "✗",
   },
   {
     feature: "Download Progress",
     atomhttp: "✓",
     requests: "✗",
-    aiohttp: "✗",
     httpx: "✗",
   },
   {
-    feature: "FormData/File Upload",
-    atomhttp: "✓",
-    requests: "✓",
-    aiohttp: "✓",
-    httpx: "✓",
+    feature: "Streaming FormData Uploads",
+    atomhttp: "✓ (automatic)",
+    requests: "Manual",
+    httpx: "Manual",
   },
   {
-    feature: "Blob/ArrayBuffer",
-    atomhttp: "✓",
-    requests: "Partial",
-    aiohttp: "✓",
-    httpx: "✓",
-  },
-  {
-    feature: "Base URL",
+    feature: "Pagination Helper",
     atomhttp: "✓",
     requests: "✗",
-    aiohttp: "✗",
-    httpx: "✓",
+    httpx: "✗",
+  },
+  {
+    feature: "Concurrency Without Async",
+    atomhttp: "✓ (.all/.submit/.map)",
+    requests: "Manual",
+    httpx: "n/a",
   },
   {
     feature: "Type Hints",
     atomhttp: "Full",
     requests: "Partial",
-    aiohttp: "✓",
     httpx: "✓",
-  },
-  {
-    feature: "Feature Count",
-    atomhttp: "44+",
-    requests: "~30",
-    aiohttp: "~35",
-    httpx: "~40",
   },
 ];
 
@@ -608,9 +605,7 @@ const ComparisonSection = () => (
               <th className="text-left py-4 px-4 text-gray-500 font-medium">
                 requests
               </th>
-              <th className="text-left py-4 px-4 text-gray-500 font-medium">
-                aiohttp
-              </th>
+
               <th className="text-left py-4 px-4 text-gray-500 font-medium">
                 httpx
               </th>
@@ -627,7 +622,6 @@ const ComparisonSection = () => (
                   {row.atomhttp}
                 </td>
                 <td className="py-3 px-4 text-gray-500">{row.requests}</td>
-                <td className="py-3 px-4 text-gray-500">{row.aiohttp}</td>
                 <td className="py-3 px-4 text-gray-500">{row.httpx}</td>
               </tr>
             ))}
@@ -658,15 +652,15 @@ export default function HomePage() {
             </div>
             <div className="inline-flex items-center gap-2 bg-white/5 px-4 py-2 rounded-full text-sm text-gray-400 mb-6 border border-white/5">
               <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
-              async · type-safe · production ready
+              sync by default · async optional · type-safe · production ready
             </div>
             <h1 className="text-5xl sm:text-6xl lg:text-7xl font-bold text-white mb-6 tracking-tight">
               AtomHTTP
             </h1>
             <p className="text-base sm:text-xl text-gray-400 max-w-2xl mx-auto leading-relaxed px-4">
-              Professional asynchronous HTTP client for Python — built for
-              modern applications that demand speed, reliability, and developer
-              experience.
+              A synchronous-first HTTP client for Python with fully optional
+              async support — designed for simplicity, ergonomics, and
+              production use.
             </p>
             <div className="flex flex-wrap justify-center gap-4 mt-8">
               <Link
@@ -748,20 +742,16 @@ export default function HomePage() {
             </div>
             <CodeBlock
               language="python"
-              code={`import asyncio
-from atomhttp import AtomHTTP
+              code={`from atomhttp import AtomHTTP
 
-async def main():
-    client = AtomHTTP({
-        'baseURL': 'https://jsonplaceholder.typicode.com',
-        'timeout': 10
-    })
-    
-    response = await client.get('/posts/1')
-    print(f"Status: {response.status}")
-    print(f"Title: {response.data['title']}")
+client = AtomHTTP(
+    base_url='https://jsonplaceholder.typicode.com',
+    timeout=10,
+)
 
-asyncio.run(main())`}
+response = client.get('/posts/1')   # no async/await needed
+print(f"Status: {response.status}")
+print(f"Title: {response.data['title']}")`}
             />
             <div className="mt-8 text-center">
               <Link

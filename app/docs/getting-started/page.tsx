@@ -7,78 +7,81 @@ import CodeBlock from "@/components/ui/CodeBlock";
 const installationOptions = [
   {
     title: "Basic installation",
-    desc: "Minimal setup for production use",
+    desc: "Minimal setup — small runtime footprint",
     code: "pip install atomhttp",
+  },
+  {
+    title: "With SOCKS proxy support",
+    desc: "Adds PySocks for socks4/socks5 proxies",
+    code: "pip install atomhttp[socks]",
+  },
+  {
+    title: "With Brotli support",
+    desc: "Transparent decoding of Content-Encoding: br responses",
+    code: "pip install atomhttp[brotli]",
   },
   {
     title: "With development dependencies",
     desc: "Includes pytest, black, mypy, ruff for development",
     code: "pip install atomhttp[dev]",
   },
-  {
-    title: "With testing dependencies only",
-    desc: "Only testing tools without linters",
-    code: "pip install atomhttp[test]",
-  },
 ];
 
 const quickStartExamples = [
   {
     title: "Basic GET request",
-    desc: "Simple request to fetch a single resource with automatic cleanup",
-    code: `import asyncio
-from atomhttp import AtomHTTP
+    desc: "Simple, synchronous — no event loop needed",
+    code: `from atomhttp import AtomHTTP
 
-async def main():
-    async with AtomHTTP() as client:
-        response = await client.get('https://jsonplaceholder.typicode.com/posts/1')
-        print(f"Status: {response.status}")
-        print(f"Title: {response.data['title']}")
-        print(f"User ID: {response.data['userId']}")
+client = AtomHTTP()
+response = client.get('https://jsonplaceholder.typicode.com/posts/1')
 
-asyncio.run(main())`,
+print(f"Status: {response.status}")
+print(f"Title: {response.data['title']}")
+print(f"User ID: {response.data['userId']}")`,
   },
   {
     title: "With configuration",
-    desc: "Using baseURL, timeout, and default headers",
-    code: `import asyncio
-from atomhttp import AtomHTTP
+    desc: "Using base_url, timeout, and default headers",
+    code: `from atomhttp import AtomHTTP
 
-async def main():
-    client = AtomHTTP({
-        'baseURL': 'https://jsonplaceholder.typicode.com',
-        'timeout': 10,
-        'headers': {'Accept': 'application/json'}
-    })
-    
-    response = await client.get('/posts', params={'_limit': 5})
-    
-    for post in response.data:
-        print(f"Post {post['id']}: {post['title'][:50]}...")
-    
-    await client.close()
+client = AtomHTTP(
+    base_url='https://jsonplaceholder.typicode.com',
+    timeout=10,
+    headers={'Accept': 'application/json'},
+)
 
-asyncio.run(main())`,
+response = client.get('/posts', params={'_limit': 5})
+
+for post in response.data:
+    print(f"Post {post['id']}: {post['title'][:50]}...")`,
   },
   {
     title: "POST request with JSON",
     desc: "Creating a new resource",
+    code: `from atomhttp import AtomHTTP
+
+client = AtomHTTP(base_url='https://jsonplaceholder.typicode.com')
+
+new_post = client.post('/posts', data={
+    'title': 'My Awesome Post',
+    'body': 'This is the content of my post',
+    'userId': 1,
+})
+
+print(f"Created with ID: {new_post.data['id']}")
+print(f"Status: {new_post.status}")`,
+  },
+  {
+    title: "Async, if you need it",
+    desc: "Same API, same transport — just await it",
     code: `import asyncio
-from atomhttp import AtomHTTP
+from atomhttp import AsyncAtomHTTP
 
 async def main():
-    client = AtomHTTP({'baseURL': 'https://jsonplaceholder.typicode.com'})
-    
-    new_post = await client.post('/posts', data={
-        'title': 'My Awesome Post',
-        'body': 'This is the content of my post',
-        'userId': 1
-    })
-    
-    print(f"Created with ID: {new_post.data['id']}")
-    print(f"Status: {new_post.status}")
-    
-    await client.close()
+    async with AsyncAtomHTTP(base_url='https://jsonplaceholder.typicode.com') as client:
+        response = await client.get('/posts/1')
+        print(response.data['title'])
 
 asyncio.run(main())`,
   },
@@ -101,7 +104,7 @@ const nextSteps = [
   {
     href: "/docs/advanced",
     title: "Advanced Features →",
-    desc: "Interceptors, progress tracking, FormData, concurrent requests, and authentication",
+    desc: "Cancellation, multithreading, streaming, caching, interceptors, and more",
   },
   {
     href: "/docs/reference",
@@ -214,25 +217,28 @@ export default function GettingStartedPage() {
               Why AtomHTTP?
             </h2>
             <p className="text-sm sm:text-base text-gray-400 mb-3">
-              AtomHTTP is a modern asynchronous HTTP client for Python that
-              combines the best features from popular libraries while adding
-              unique capabilities like progress tracking, interceptors, and full
-              type hints.
+              AtomHTTP is a synchronous-first HTTP client for Python with fully
+              optional async support — designed to be simple for everyday
+              requests while remaining powerful enough for production
+              applications.
             </p>
           </div>
           <InfoBox>
             <p className="text-gray-300 text-base sm:text-lg mb-4">
-              AtomHTTP is a modern, feature-rich asynchronous HTTP client
-              designed for Python developers who need reliability, flexibility,
-              and performance.
+              Most HTTP client code doesn't need <code>async</code>/
+              <code>await</code>. AtomHTTP doesn't force it on you — every
+              method on <code>AtomHTTP</code> returns a response directly, no
+              event loop required. When you do want async,{" "}
+              <code>AsyncAtomHTTP</code> offers the exact same API, backed by
+              the exact same transport.
             </p>
             <p className="text-gray-400 leading-relaxed text-sm sm:text-base">
-              With comprehensive built-in features including interceptors,
-              progress tracking, multiple response types (JSON, text, blob,
-              arraybuffer, stream), FormData support, concurrent request
-              helpers, and thorough error handling with standardized error codes
-              — AtomHTTP provides everything you need for production-grade HTTP
-              communication.
+              With cancellation (axios/fetch-style <code>AbortController</code>
+              ), a persistent thread pool for real concurrency without async,
+              true streaming for large uploads/downloads, pagination helpers,
+              HTTP caching, interceptors, retries with backoff, and full type
+              hints — AtomHTTP provides everything you need for production-grade
+              HTTP communication, sync or async.
             </p>
           </InfoBox>
         </Section>
@@ -243,8 +249,8 @@ export default function GettingStartedPage() {
               Installation
             </h2>
             <p className="text-sm sm:text-base text-gray-400 mb-3">
-              Install AtomHTTP using pip. The library has minimal dependencies
-              and works with Python 3.8 and above.
+              Install AtomHTTP using pip. The library has exactly one runtime
+              dependency and works with Python 3.8 and above.
             </p>
           </div>
 
@@ -265,7 +271,8 @@ export default function GettingStartedPage() {
               Requires Python 3.8 or higher
             </p>
             <p className="text-gray-500 text-sm mt-1">
-              Core dependency: aiohttp 3.8.0+ (automatically installed)
+              Minimal runtime dependencies and a small, stable surface area make
+              AtomHTTP easy to adopt in existing projects.
             </p>
           </div>
         </Section>
@@ -277,7 +284,7 @@ export default function GettingStartedPage() {
             </h2>
             <p className="text-sm sm:text-base text-gray-400 mb-3">
               Create a client instance and start making requests in just a few
-              lines of code.
+              lines of code — no <code>asyncio.run()</code> required.
             </p>
           </div>
 
@@ -294,6 +301,38 @@ export default function GettingStartedPage() {
           </div>
         </Section>
 
+        <Section id="sync-vs-async" className="scroll-mt-24">
+          <div className="mb-4">
+            <h2 className="text-xl sm:text-2xl font-semibold text-white mb-2">
+              Sync vs Async
+            </h2>
+            <p className="text-sm sm:text-base text-gray-400 mb-3">
+              <code>AtomHTTP</code> (sync) and <code>AsyncAtomHTTP</code>{" "}
+              (async) expose an identical method surface and share the same
+              urllib3-based transport. <code>AsyncAtomHTTP</code> doesn't
+              reimplement anything — it runs the same blocking call in a worker
+              thread via <code>loop.run_in_executor()</code>, so the event loop
+              stays responsive.
+            </p>
+          </div>
+          <CodeBlock
+            language="python"
+            code={`from atomhttp import AtomHTTP, AsyncAtomHTTP
+
+# Sync -- the default, no event loop required
+client = AtomHTTP(base_url="https://api.example.com")
+response = client.get("/users/1")
+
+# Async -- fully optional, identical behavior
+async with AsyncAtomHTTP(base_url="https://api.example.com") as client:
+    response = await client.get("/users/1")
+
+# Convert between them without losing state (cookies, interceptors, pools):
+async_client = client.as_async()
+sync_client = async_client.as_sync()`}
+          />
+        </Section>
+
         <Section id="requirements" className="scroll-mt-24">
           <div className="mb-4">
             <h2 className="text-xl sm:text-2xl font-semibold text-white mb-2">
@@ -301,7 +340,8 @@ export default function GettingStartedPage() {
             </h2>
             <p className="text-sm sm:text-base text-gray-400 mb-3">
               AtomHTTP works on all major operating systems and has minimal
-              requirements.
+              requirements. Tested on Python 3.8–3.13 across Linux, macOS, and
+              Windows in CI.
             </p>
           </div>
           <div className="grid sm:grid-cols-2 gap-4">
@@ -320,52 +360,47 @@ export default function GettingStartedPage() {
             </h2>
             <p className="text-sm sm:text-base text-gray-400 mb-3">
               Let's make a complete example that demonstrates the most common
-              features.
+              features — still without a single <code>await</code>.
             </p>
           </div>
           <CodeBlock
             language="python"
-            code={`import asyncio
-from atomhttp import AtomHTTP
+            code={`from atomhttp import AtomHTTP
 
-async def main():
-    # 1. Create client with configuration
-    client = AtomHTTP({
-        'baseURL': 'https://jsonplaceholder.typicode.com',
-        'timeout': 10,
-        'headers': {
-            'Accept': 'application/json',
-            'User-Agent': 'AtomHTTP-Demo/1.0'
-        }
-    })
-    
-    # 2. GET request with query parameters
-    print("Fetching posts...")
-    response = await client.get('/posts', params={'_limit': 3})
-    
-    print(f"Status: {response.status}")
-    print(f"Headers: {dict(list(response.headers.items())[:3])}")
-    
-    for post in response.data:
-        print(f"  Post {post['id']}: {post['title'][:40]}...")
-    
-    # 3. POST request
-    print("\\nCreating a new post...")
-    new_post = await client.post('/posts', data={
-        'title': 'Hello AtomHTTP!',
-        'body': 'This is my first request with AtomHTTP',
-        'userId': 1
-    })
-    
-    print(f"Created with ID: {new_post.data['id']}")
-    print(f"Response status: {new_post.status}")
-    
-    # 4. Clean up
-    await client.close()
-    print("\\nDone!")
+# 1. Create client with configuration
+client = AtomHTTP(
+    base_url='https://jsonplaceholder.typicode.com',
+    timeout=10,
+    headers={
+        'Accept': 'application/json',
+        'User-Agent': 'AtomHTTP-Demo/1.0',
+    },
+)
 
-if __name__ == "__main__":
-    asyncio.run(main())`}
+# 2. GET request with query parameters
+print("Fetching posts...")
+response = client.get('/posts', params={'_limit': 3})
+
+print(f"Status: {response.status}")
+print(f"Headers: {dict(list(response.headers.items())[:3])}")
+
+for post in response.data:
+    print(f"  Post {post['id']}: {post['title'][:40]}...")
+
+# 3. POST request
+print("\\nCreating a new post...")
+new_post = client.post('/posts', data={
+    'title': 'Hello AtomHTTP!',
+    'body': 'This is my first request with AtomHTTP',
+    'userId': 1,
+})
+
+print(f"Created with ID: {new_post.data['id']}")
+print(f"Response status: {new_post.status}")
+
+# 4. Clean up (releases pooled connections + the thread pool)
+client.close()
+print("\\nDone!")`}
           />
         </Section>
 
